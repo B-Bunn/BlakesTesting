@@ -10,6 +10,12 @@ anything more. Everything is a plain `IExternalCommand` in `BlakesTesting.dll`, 
    `%AppData%\Autodesk\Revit\Addins\<year>\`.
 3. **Promote it** - copy the command into `BIM-Tools/src/...` (and follow that repo's CLAUDE.md: ribbon line, Updates card).
 
+## Just load it (no build)
+
+Release builds of every year are committed in `dist\<year>\` (`BlakesTesting.dll`, `.pdb`, `.addin`). `git pull`, then load
+`dist\2023\BlakesTesting.dll` in Hot Load or Add-in Manager. After changing code, refresh them with
+`.\Build-All.ps1 -Configuration Release -Dist` and commit `dist\`.
+
 ## Build
 
     dotnet build src/BlakesTesting -c "Debug R23"      # R23 R24 R25 R26 R27, as in BIM Tools

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copy this file and BlakesTesting.dll into %AppData%\Autodesk\Revit\Addins\<year>\ (edit Assembly to the full path of
+     the DLL if it is not beside this file). The commands appear under Add-Ins > External Tools. -->
+<RevitAddIns>
+  <AddIn Type="Command">
+    <Name>Spread Tags</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.SpreadTags</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e001</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
+  <AddIn Type="Command">
+    <Name>Spread Tags Left</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.SpreadTagsLeft</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e002</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
+  <AddIn Type="Command">
+    <Name>Spread Tags Right</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.SpreadTagsRight</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e003</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
+</RevitAddIns>

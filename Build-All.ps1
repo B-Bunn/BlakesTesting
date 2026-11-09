@@ -10,6 +10,10 @@
 .PARAMETER Configuration
     Debug or Release. Debug by default (this is a testing repo).
 
+.PARAMETER Dist
+    After a successful build, copy the DLL, PDB and .addin of each year into dist\<year>\ (the folder committed to the
+    repo so the DLL can be loaded without building). Use with -Configuration Release.
+
 .PARAMETER Only
     Comma-separated Revit years, e.g. "2023" or "23,25". All five when omitted.
 
@@ -21,7 +25,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [string]$Only
+    [string]$Only,
+    [switch]$Dist
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +51,11 @@ foreach ($year in $years) {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     dotnet build $project -c $config --nologo -v:q
     $ok = ($LASTEXITCODE -eq 0)
+    if ($ok -and $Dist) {
+        $out = Join-Path $PSScriptRoot "dist\$year"
+        New-Item -ItemType Directory -Force $out | Out-Null
+        Copy-Item (Join-Path $PSScriptRoot "src\BlakesTesting\bin\$Configuration\$year\BlakesTesting.*") $out -Include *.dll, *.pdb, *.addin
+    }
     $results += [pscustomobject]@{ Year = $year; Configuration = $config; Result = $(if ($ok) { 'ok' } else { 'FAILED' }); Seconds = [int]$watch.Elapsed.TotalSeconds }
 }
 
