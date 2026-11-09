@@ -90,7 +90,9 @@ namespace BlakesTesting.Commands
                 items.Add(new TagItem(id, head.DotProduct(right), head.DotProduct(up), width, height, movable));
             }
 
-            List<TagPlacement> placements = TagLayout.Compute(items, options, Math.Max(1, view.Scale));
+            List<DrawingLine> drawing = options.GeometryPenalty > 0 ? DrawingLines(doc, view, right, up, ft) : new List<DrawingLine>();
+            var stats = new LayoutStats();
+            List<TagPlacement> placements = TagLayout.Compute(items, options, Math.Max(1, view.Scale), drawing, stats);
             Dictionary<int, TagItem> itemById = items.ToDictionary(i => i.Id);
 
             int moved = 0;
@@ -125,11 +127,63 @@ namespace BlakesTesting.Commands
             TagItem? mid = sizes.Count > 0 ? sizes[sizes.Count / 2] : null;
             string report = $"Spread {moved} overlapping tag(s) {scope}; {candidates - moved - stuck} already readable.";
             if (stuck > 0) report += $"\n{stuck} overlap but have no free spot within {options.MaxDistance} in of paper - left where they are.";
+            report += $"\nLeader crossings: {stats.CrossingsBefore} -> {stats.CrossingsAfter}. Read {drawing.Count} drawing line(s); {stats.OnDrawing} tag(s) still sit on the drawing.";
             if (mid != null) report += $"\nLabel size used (typical): {mid.Width / ft:F2} x {mid.Height / ft:F2} in of paper; {measured} of {items.Count} measured from the tag, the rest estimated.";
             if (pinned > 0) report += $"\n{pinned} pinned tag(s) were not touched.";
             if (failed.Count > 0) report += $"\n{failed.Count} could not be moved:\n" + string.Join("\n", failed.Take(10));
             TaskDialog.Show("Spread Tags", report);
             return Result.Succeeded;
+        }
+
+        /// <summary>
+        ///     The lines of the model a label should keep off, in view coordinates: a pipe, duct or other run as its centre line,
+        ///     anything else as its box (edges and diagonals) - boxes bigger than 2" of paper are skipped, so a wall or a
+        ///     slab does not fence the labels out of the whole view. Tags and annotations are not drawing.
+        /// </summary>
+        private static List<DrawingLine> DrawingLines(Document doc, View view, XYZ right, XYZ up, double ft)
+        {
+            var lines = new List<DrawingLine>();
+            double limit = 2 * ft;
+            foreach (Element e in new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType())
+            {
+                try
+                {
+                    if (e is IndependentTag || e.Category == null || e.Category.CategoryType != CategoryType.Model) continue;
+                    if (e.Location is LocationCurve lc && lc.Curve != null)
+                    {
+                        XYZ a = lc.Curve.GetEndPoint(0), b = lc.Curve.GetEndPoint(1);
+                        lines.Add(new DrawingLine(a.DotProduct(right), a.DotProduct(up), b.DotProduct(right), b.DotProduct(up)));
+                        continue;
+                    }
+
+                    BoundingBoxXYZ? box = e.get_BoundingBox(view);
+                    if (box == null) continue;
+                    double minR = double.MaxValue, maxR = double.MinValue, minU = double.MaxValue, maxU = double.MinValue;
+                    foreach (double x in new[] { box.Min.X, box.Max.X })
+                        foreach (double y in new[] { box.Min.Y, box.Max.Y })
+                            foreach (double z in new[] { box.Min.Z, box.Max.Z })
+                            {
+                                var c = new XYZ(x, y, z);
+                                double r = c.DotProduct(right), u = c.DotProduct(up);
+                                minR = Math.Min(minR, r); maxR = Math.Max(maxR, r);
+                                minU = Math.Min(minU, u); maxU = Math.Max(maxU, u);
+                            }
+
+                    if (maxR - minR > limit || maxU - minU > limit) continue;
+                    lines.Add(new DrawingLine(minR, minU, maxR, minU));
+                    lines.Add(new DrawingLine(maxR, minU, maxR, maxU));
+                    lines.Add(new DrawingLine(maxR, maxU, minR, maxU));
+                    lines.Add(new DrawingLine(minR, maxU, minR, minU));
+                    lines.Add(new DrawingLine(minR, minU, maxR, maxU));
+                    lines.Add(new DrawingLine(minR, maxU, maxR, minU));
+                }
+                catch (Exception)
+                {
+                    // an element with no usable geometry in this view is simply not an obstacle
+                }
+            }
+
+            return lines;
         }
 
         /// <summary>Turn the leader on so the tag still points at what it tags; a tag family without one just moves.</summary>

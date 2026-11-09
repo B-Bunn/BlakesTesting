@@ -38,7 +38,11 @@ tag goes further than `MaxDistance` (1 in of paper) from where it is - a tag wit
 layout looks the same at any view scale: `LabelHeight` and `CharWidth` (label size, used when a tag's real size cannot be read -
 a tag with a leader), `Padding`, `MinOffset` (how far off its old spot a moved tag sits), `ColumnStep`, `MaxColumns`, `MaxRows`, `MaxDistance`. The dialog after a run
 says which label size it used and how many tags it measured rather than estimated - if that size looks wrong, tune `LabelHeight`/`CharWidth`.
-Pinned tags are left alone. Known limits: it does not look at pipes or other drawing lines, only at tags, and a big label with a
+Two more things reduce overlap: **leaders are untangled** (pairs of tags are swapped wherever that removes a crossing - the dialog shows
+`Leader crossings: before -> after`), and **labels keep off the drawing** - the pipes, fittings and other model elements in the view are read
+(pipes as their run, fittings as their box) and a spot on top of one has to be `GeometryPenalty` (0.5 in of paper) nearer than a clear spot
+to win; set it to 0 to ignore the drawing. Pinned tags are left alone. Known limits: pipes are straight runs between their ends (a bend in one run is not followed), walls and other large elements are
+skipped, and a big label with a
 leader is sized from its text, so set `LabelHeight` to match your tag text if big ones get overlapped.
 The layout rule has no Revit types in it and is tested without Revit:
 
