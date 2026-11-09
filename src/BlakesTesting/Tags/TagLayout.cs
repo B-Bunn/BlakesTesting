@@ -29,24 +29,30 @@ namespace BlakesTesting.Tags
         public double CharWidth { get; set; } = 0.13;
 
         /// <summary>Clear space kept around every label.</summary>
-        public double Padding { get; set; } = 0.04;
+        public double Padding { get; set; } = 0.02;
 
         /// <summary>How far a moved tag sits off its old position, at least, so it clears what it was piled on.</summary>
-        public double MinOffset { get; set; } = 0.25;
+        public double MinOffset { get; set; } = 0.1;
 
         /// <summary>Step between the columns tried beside the pile.</summary>
-        public double ColumnStep { get; set; } = 0.12;
+        public double ColumnStep { get; set; } = 0.1;
 
         /// <summary>How many columns out and how many rows up and down are tried before a tag is left where it is.</summary>
-        public int MaxColumns { get; set; } = 12;
+        public int MaxColumns { get; set; } = 10;
 
         public int MaxRows { get; set; } = 40;
 
         /// <summary>
-        ///     How much more a vertical move costs than a horizontal one. Above 1, tags stay level with what they tag
-        ///     and leaders run near-horizontal, as in a hand-tidied riser.
+        ///     The furthest a tag may be moved from where it is now. A tag with no free spot that close is left alone
+        ///     (and counted) rather than sent somewhere its leader would run across the drawing.
         /// </summary>
-        public double VerticalWeight { get; set; } = 1.5;
+        public double MaxDistance { get; set; } = 1.0;
+
+        /// <summary>
+        ///     How much more a vertical move costs than a horizontal one. 1 packs tags into the tightest blob; above 1
+        ///     they stay level with what they tag and leaders run near-horizontal, but spread further sideways.
+        /// </summary>
+        public double VerticalWeight { get; set; } = 1.0;
     }
 
     /// <summary>One tag going in: where its head is now, how big its label is, and whether it may be moved.</summary>
@@ -76,18 +82,22 @@ namespace BlakesTesting.Tags
     /// <summary>One tag coming out: where to move it to (view coordinates), and whether that is a move at all.</summary>
     public sealed class TagPlacement
     {
-        public TagPlacement(int id, double right, double up, bool moved)
+        public TagPlacement(int id, double right, double up, bool moved, bool stuck = false)
         {
             Id = id;
             Right = right;
             Up = up;
             Moved = moved;
+            Stuck = stuck;
         }
 
         public int Id { get; }
         public double Right { get; }
         public double Up { get; }
         public bool Moved { get; }
+
+        /// <summary>It overlapped another tag but no free spot within <see cref="SpreadOptions.MaxDistance" /> was found.</summary>
+        public bool Stuck { get; }
     }
 
     /// <summary>
@@ -141,6 +151,7 @@ namespace BlakesTesting.Tags
                         double dx = side * (minOffset + c * colStep);
                         double dy = r * rowStep;
                         double cost = Math.Sqrt(dx * dx + options.VerticalWeight * options.VerticalWeight * dy * dy);
+                        if (Math.Sqrt(dx * dx + dy * dy) > options.MaxDistance * ft) continue; // too far to be worth it
                         spots.Add((dx, dy, cost));
                     }
                 }
@@ -175,7 +186,7 @@ namespace BlakesTesting.Tags
                 if (!placed)
                 {
                     grid.Add(i, MakeBox(t, t.Right, t.Up, pad));
-                    placements[i] = new TagPlacement(t.Id, t.Right, t.Up, false);
+                    placements[i] = new TagPlacement(t.Id, t.Right, t.Up, false, stuck: true);
                 }
             }
 

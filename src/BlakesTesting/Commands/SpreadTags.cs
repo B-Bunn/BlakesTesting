@@ -74,7 +74,7 @@ namespace BlakesTesting.Commands
             XYZ right = view.RightDirection;
             XYZ up = view.UpDirection;
             double ft = Math.Max(1, view.Scale) / 12.0;
-            int pinned = 0;
+            int pinned = 0, measured = 0;
             var byId = new Dictionary<int, IndependentTag>();
             var items = new List<TagItem>();
             foreach (IndependentTag tag in inView)
@@ -84,7 +84,8 @@ namespace BlakesTesting.Commands
                 if (tag.Pinned && (!useSelection || selected.Contains(id))) pinned++;
 
                 XYZ head = tag.TagHeadPosition;
-                (double width, double height) = LabelSize(tag, view, right, up, options, ft);
+                (double width, double height, bool real) = LabelSize(tag, view, right, up, options, ft);
+                if (real) measured++;
                 byId[id] = tag;
                 items.Add(new TagItem(id, head.DotProduct(right), head.DotProduct(up), width, height, movable));
             }
@@ -119,7 +120,12 @@ namespace BlakesTesting.Commands
                 transaction.Commit();
             }
 
-            string report = $"Spread {moved} overlapping tag(s) {scope}; {candidates - moved} already readable or left alone.";
+            int stuck = placements.Count(p => p.Stuck);
+            List<TagItem> sizes = items.Where(i => i.Movable).OrderBy(i => i.Height).ToList();
+            TagItem? mid = sizes.Count > 0 ? sizes[sizes.Count / 2] : null;
+            string report = $"Spread {moved} overlapping tag(s) {scope}; {candidates - moved - stuck} already readable.";
+            if (stuck > 0) report += $"\n{stuck} overlap but have no free spot within {options.MaxDistance} in of paper - left where they are.";
+            if (mid != null) report += $"\nLabel size used (typical): {mid.Width / ft:F2} x {mid.Height / ft:F2} in of paper; {measured} of {items.Count} measured from the tag, the rest estimated.";
             if (pinned > 0) report += $"\n{pinned} pinned tag(s) were not touched.";
             if (failed.Count > 0) report += $"\n{failed.Count} could not be moved:\n" + string.Join("\n", failed.Take(10));
             TaskDialog.Show("Spread Tags", report);
@@ -143,7 +149,7 @@ namespace BlakesTesting.Commands
         ///     The label's size in model feet along the view's axes. A tag with no leader reports its true box; one with a
         ///     leader would report the leader too, so its size comes from its text and the paper-size defaults.
         /// </summary>
-        private static (double width, double height) LabelSize(IndependentTag tag, View view, XYZ right, XYZ up, SpreadOptions options, double ft)
+        private static (double width, double height, bool real) LabelSize(IndependentTag tag, View view, XYZ right, XYZ up, SpreadOptions options, double ft)
         {
             double fallbackH = options.LabelHeight * ft;
             double fallbackW = Math.Max(1, TextLength(tag)) * options.CharWidth * ft;
@@ -162,7 +168,7 @@ namespace BlakesTesting.Commands
                         double w = corners.Max(c => c.DotProduct(right)) - corners.Min(c => c.DotProduct(right));
                         double h = corners.Max(c => c.DotProduct(up)) - corners.Min(c => c.DotProduct(up));
                         // Believe it only if it is label-sized (under 3" of paper): anything else is not just the text.
-                        if (w > 1e-6 && h > 1e-6 && w < 3 * ft && h < 3 * ft) return (w, h);
+                        if (w > 1e-6 && h > 1e-6 && w < 3 * ft && h < 3 * ft) return (w, h, true);
                     }
                 }
             }
@@ -171,7 +177,7 @@ namespace BlakesTesting.Commands
                 // fall through to the estimate
             }
 
-            return (fallbackW, fallbackH);
+            return (fallbackW, fallbackH, false);
         }
 
         private static int TextLength(IndependentTag tag)

@@ -33,9 +33,11 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `SpreadTagsLeft` / `SpreadTagsRight` | The same, but only to one side - for a view with no room on the other. |
 
 How it decides, in `Tags/TagLayout.cs`: tags are placed one at a time, highest first, at the nearest free spot, where a move up or
-down costs `VerticalWeight` (1.5) times a move sideways, so leaders run near-horizontal. Everything is in **paper inches**, so a
+down costs `VerticalWeight` (1.0 = tightest blob; raise it to keep tags level with what they tag) times a move sideways, and no
+tag goes further than `MaxDistance` (1 in of paper) from where it is - a tag with no room that close stays put and is counted in the report. Everything is in **paper inches**, so a
 layout looks the same at any view scale: `LabelHeight` and `CharWidth` (label size, used when a tag's real size cannot be read -
-a tag with a leader), `Padding`, `MinOffset` (how far off its old spot a moved tag sits), `ColumnStep`, `MaxColumns`, `MaxRows`.
+a tag with a leader), `Padding`, `MinOffset` (how far off its old spot a moved tag sits), `ColumnStep`, `MaxColumns`, `MaxRows`, `MaxDistance`. The dialog after a run
+says which label size it used and how many tags it measured rather than estimated - if that size looks wrong, tune `LabelHeight`/`CharWidth`.
 Pinned tags are left alone. Known limits: it does not look at pipes or other drawing lines, only at tags, and a big label with a
 leader is sized from its text, so set `LabelHeight` to match your tag text if big ones get overlapped.
 The layout rule has no Revit types in it and is tested without Revit:

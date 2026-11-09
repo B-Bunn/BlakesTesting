@@ -43,7 +43,7 @@ for (int a = 0; a < result.Count; a++)
 Check(!anyOverlap, "after the spread no two labels overlap");
 
 double maxMove = Enumerable.Range(0, 20).Max(i => Math.Sqrt(Math.Pow(byId[i].Right - item[i].Right, 2) + Math.Pow(byId[i].Up - item[i].Up, 2)));
-Check(maxMove < 2.0 * ft + 20 * h, $"spread stays local: furthest move {maxMove:F1} ft (paper {maxMove / ft:F2} in)");
+Check(maxMove <= (options.MaxDistance + 0.2) * ft, $"no tag moves further than MaxDistance: furthest {maxMove / ft:F2} in of paper");
 Check(Enumerable.Range(0, 20).Any(i => byId[i].Right < 100) && Enumerable.Range(0, 20).Any(i => byId[i].Right > 100), "tags land on both sides of the pile");
 
 var leftOnly = TagLayout.Compute(items, new SpreadOptions { Side = SpreadSide.Left }, scale);
@@ -54,6 +54,12 @@ var withStatic = new List<TagItem>(items) { new TagItem(200, 99.0, 501.5, w * 3,
 var r2 = TagLayout.Compute(withStatic, options, scale);
 var staticP = r2.First(p => p.Id == 200);
 Check(!staticP.Moved && r2.Where(p => p.Id < 20).All(p => !(Math.Abs(p.Right - 99.0) < (w + w * 3) / 2 && Math.Abs(p.Up - 501.5) < (h + h * 3) / 2)), "moved tags keep clear of fixed ones");
+
+// A pile too dense for the reach: the tags that cannot be placed close by stay put and are flagged, not flung away.
+var dense = Enumerable.Range(0, 60).Select(i => new TagItem(i, 100 + rng.NextDouble() * 0.2, 500 + rng.NextDouble() * 0.2, w, h)).ToList();
+var rd = TagLayout.Compute(dense, new SpreadOptions { MaxDistance = 0.5 }, scale);
+Check(rd.Any(p => p.Stuck) && rd.Where(p => p.Stuck).All(p => !p.Moved), $"{rd.Count(p => p.Stuck)} of 60 too dense for 0.5 in reach are left alone and flagged");
+Check(rd.Where(p => p.Moved).All(p => Math.Sqrt(Math.Pow(p.Right - dense[p.Id].Right, 2) + Math.Pow(p.Up - dense[p.Id].Up, 2)) <= 0.5 * ft + w), "none moved past the reach");
 
 // 1000 tags: 50 risers of 20 piled tags each, quickly.
 var big = new List<TagItem>();
