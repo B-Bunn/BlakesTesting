@@ -17,7 +17,10 @@ anything more. Everything is a plain `IExternalCommand` in `BlakesTesting.dll`, 
     .\Build-All.ps1 -Only 2023                         # just the Revit you run
 
 In Visual Studio, `BlakesTesting.sln` has the configurations `Debug R23` ... `Debug R27` and `Release R23` ... `Release R27` in the
-configuration dropdown (plain `Debug`/`Release` build 2025). Pick the one for the Revit you run.
+configuration dropdown (plain `Debug`/`Release` build 2025). Pick the one for the Revit you run, then **Build > Build Solution** (Ctrl+Shift+B) - the solution holds only
+`BlakesTesting`, so the one DLL it makes is the one to load:
+`src\BlakesTesting\bin\Debug\<year>\BlakesTesting.dll`. (The layout test is not in the solution, so it can never be built
+or loaded by mistake; run it from a terminal, below.)
 
 2023 and 2024 build for .NET Framework 4.8, 2025 and 2026 for .NET 8, 2027 for .NET 10 (needs the .NET 10 SDK).
 The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. Warnings are errors.
