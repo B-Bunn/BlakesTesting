@@ -75,6 +75,29 @@ namespace BlakesTesting.Commands
             XYZ up = view.UpDirection;
             double ft = Math.Max(1, view.Scale) / 12.0;
             int pinned = 0, measured = 0;
+
+            // Tags with a leader cannot be measured (their box includes the leader), so calibrate their size from the tags in
+            // this view that can: the typical measured height, and width per character. A fixed default would be wrong for
+            // any tag text size - and made a second run spread tags further than the first.
+            var measuredH = new List<double>();
+            var measuredWPerChar = new List<double>();
+            foreach (IndependentTag tag in inView)
+            {
+                (double w, double h, bool real) = LabelSize(tag, view, right, up, options, ft);
+                if (!real) continue;
+                measuredH.Add(h);
+                measuredWPerChar.Add(w / Math.Max(1, TextLength(tag)));
+            }
+
+            double fallbackH = options.LabelHeight * ft, fallbackCharW = options.CharWidth * ft;
+            if (measuredH.Count >= 5)
+            {
+                measuredH.Sort();
+                measuredWPerChar.Sort();
+                fallbackH = measuredH[measuredH.Count / 2];
+                fallbackCharW = measuredWPerChar[measuredWPerChar.Count / 2];
+            }
+
             var byId = new Dictionary<int, IndependentTag>();
             var items = new List<TagItem>();
             foreach (IndependentTag tag in inView)
@@ -86,6 +109,12 @@ namespace BlakesTesting.Commands
                 XYZ head = tag.TagHeadPosition;
                 (double width, double height, bool real) = LabelSize(tag, view, right, up, options, ft);
                 if (real) measured++;
+                else
+                {
+                    width = Math.Max(1, TextLength(tag)) * fallbackCharW;
+                    height = fallbackH;
+                }
+
                 byId[id] = tag;
                 double hr = head.DotProduct(right), hu = head.DotProduct(up);
                 (double ar, double au) = LeaderEnd(doc, tag, hr, hu, right, up);
@@ -130,9 +159,10 @@ namespace BlakesTesting.Commands
             string report = useSelection
                 ? $"Re-laid out {moved} of {candidates} selected tag(s); {candidates - moved - stuck} were already in the best spot found."
                 : $"Spread {moved} overlapping tag(s) {scope}; {candidates - moved - stuck} already readable.";
+            if (!useSelection && moved == 0 && stuck == 0) report += "\nNothing overlaps. Select tags and run again to re-lay those out anyway.";
             if (stuck > 0) report += $"\n{stuck} overlap but have no free spot within {options.MaxDistance} in of paper - left where they are.";
             report += $"\nLeader crossings: {stats.CrossingsBefore} -> {stats.CrossingsAfter}. Read {drawing.Count} drawing line(s); {stats.OnDrawing} tag(s) still sit on the drawing.";
-            if (mid != null) report += $"\nLabel size used (typical): {mid.Width / ft:F2} x {mid.Height / ft:F2} in of paper; {measured} of {items.Count} measured from the tag, the rest estimated.";
+            if (mid != null) report += $"\nLabel size used (typical): {mid.Width / ft:F2} x {mid.Height / ft:F2} in of paper; {measured} of {items.Count} measured from the tag, the rest estimated from those.";
             if (pinned > 0) report += $"\n{pinned} pinned tag(s) were not touched.";
             if (failed.Count > 0) report += $"\n{failed.Count} could not be moved:\n" + string.Join("\n", failed.Take(10));
             TaskDialog.Show("Spread Tags", report);
