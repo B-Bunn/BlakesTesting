@@ -1,0 +1,85 @@
+<Project>
+  <!--
+    The Revit-year configurations for the two Hot Load projects (HotLoad.csproj and
+    Samples/HotLoadSamples/HotLoadSamples.csproj), imported by both so they cannot drift apart. The
+    same table every add-in in this repository carries in its own csproj:
+
+      Revit 2023, 2024  -> .NET Framework 4.8  (net48)
+      Revit 2025, 2026  -> .NET 8              (net8.0-windows)
+      Revit 2027        -> .NET 10             (net10.0-windows), needs the .NET 10 SDK
+
+    A bare Debug/Release builds 2025, as the old solutions did.
+  -->
+  <PropertyGroup>
+    <Configurations>Debug;Release;Debug R23;Debug R24;Debug R25;Debug R26;Debug R27;Release R23;Release R24;Release R25;Release R26;Release R27</Configurations>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- Pinned as every add-in here pins it: a floating LangVersion changes with the installed SDK. -->
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Revit is 64-bit only, and the Revit API package is x64; saying so is what keeps the build free of
+         the AnyCPU-against-x64 architecture warning without switching that check off. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- An add-in is loaded by Revit, which reads no .deps.json or .runtimeconfig.json of its own. -->
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(Configuration.Contains('R23'))">
+    <RevitVersion>2023</RevitVersion>
+    <TargetFramework>net48</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.Contains('R24'))">
+    <RevitVersion>2024</RevitVersion>
+    <TargetFramework>net48</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.Contains('R25'))">
+    <RevitVersion>2025</RevitVersion>
+    <TargetFramework>net8.0-windows</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.Contains('R26'))">
+    <RevitVersion>2026</RevitVersion>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- The 2026.5 package ships .NET 10 assemblies a net8.0 project cannot compile against (CS1705);
+         a DLL built against 2026.4 still loads in 2026.5. Same pin as every add-in here. -->
+    <RevitApiPackageVersion>2026.4.*</RevitApiPackageVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.Contains('R27'))">
+    <RevitVersion>2027</RevitVersion>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RevitApiPackageVersion>2027.*</RevitApiPackageVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RevitVersion)' == ''">
+    <RevitVersion>2025</RevitVersion>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RevitApiPackageVersion Condition="'$(RevitApiPackageVersion)' == ''">$(RevitVersion).*</RevitApiPackageVersion>
+    <!-- The symbols the add-ins use: REVIT20xx for the exact year and REVIT20xx_OR_GREATER from 2023 up.
+         Hot Script defines the same ones when it compiles a script, so a script and a project agree. -->
+    <DefineConstants>$(DefineConstants);REVIT$(RevitVersion)</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2023'">$(DefineConstants);REVIT2023_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2024'">$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2025'">$(DefineConstants);REVIT2025_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2026'">$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2027'">$(DefineConstants);REVIT2027_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <!-- The SDK only switches Optimize/DEBUG on for configurations named exactly Debug/Release. -->
+  <PropertyGroup Condition="$(Configuration.StartsWith('Debug'))">
+    <Optimize>false</Optimize>
+    <DebugType>portable</DebugType>
+    <DefineConstants>$(DefineConstants);DEBUG</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="!$(Configuration.StartsWith('Debug'))">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compile-only: Revit supplies the real RevitAPI.dll and RevitAPIUI.dll. Never copy them beside a
+         DLL that is hot-loaded - Hot Load always hands a command Revit's own copies anyway. -->
+    <PackageReference Include="Revit_All_Main_Versions_API_x64" Version="$(RevitApiPackageVersion)" IncludeAssets="build; compile" PrivateAssets="All" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

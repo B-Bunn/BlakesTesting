@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    BlakesTesting.dll: Blake's scratch pad for Revit commands - things being tried before they go into BIM Tools,
+    new tools on their way there, and one-off jobs. Plain IExternalCommands, so each one runs three ways:
+      1. BIM Tools > Settings > Hot Load > Run DLL... (or Watch Window) pointing at bin\<Config>\<year>\BlakesTesting.dll
+      2. Revit's own Add-Ins > External Tools, with BlakesTesting.addin copied beside the DLL into the Addins folder
+      3. copied into src\ of BIM-Tools when it is ready to stay.
+    Build the configuration of the Revit you are in: dotnet build -c "Debug R25"
+  -->
+  <Import Project="..\..\RevitYears.props" />
+
+  <PropertyGroup>
+    <RootNamespace>BlakesTesting</RootNamespace>
+    <AssemblyName>BlakesTesting</AssemblyName>
+    <OutputType>Library</OutputType>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.StartsWith('Debug'))">
+    <OutputPath>bin\Debug\$(RevitVersion)\</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="!$(Configuration.StartsWith('Debug'))">
+    <OutputPath>bin\Release\$(RevitVersion)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\BlakesTesting.addin" CopyToOutputDirectory="PreserveNewest" Link="BlakesTesting.addin" />
+  </ItemGroup>
+</Project>

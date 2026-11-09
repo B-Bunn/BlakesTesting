@@ -1,0 +1,7 @@
+<Project>
+  <!-- Same house rule as BIM-Tools: a warning fails the build, so none are ever left lying around. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+</Project>
