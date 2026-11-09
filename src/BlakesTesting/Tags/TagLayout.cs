@@ -5,13 +5,13 @@ using System.Linq;
 
 namespace BlakesTesting.Tags
 {
-    /// <summary>Which corner of a tag cluster the spread-out tags are moved to.</summary>
-    public enum SpreadDirection
+    /// <summary>Which side(s) of where a tag is now it may be moved to.</summary>
+    public enum SpreadSide
     {
-        BottomLeft,
-        BottomRight,
-        TopLeft,
-        TopRight,
+        /// <summary>Whichever free spot is nearest, left or right.</summary>
+        Both,
+        Left,
+        Right,
     }
 
     /// <summary>
@@ -20,66 +20,83 @@ namespace BlakesTesting.Tags
     /// </summary>
     public sealed class SpreadOptions
     {
-        public SpreadDirection Direction { get; set; } = SpreadDirection.BottomLeft;
+        public SpreadSide Side { get; set; } = SpreadSide.Both;
 
-        /// <summary>Tags whose heads are closer than this (paper inches) count as one pile to spread.</summary>
-        public double ClusterRadius { get; set; } = 0.4;
+        /// <summary>Label height when the tag's real size cannot be read (a tag with a leader).</summary>
+        public double LabelHeight { get; set; } = 0.2;
 
-        /// <summary>Gap between the pile and the first spread-out tag.</summary>
-        public double Gap { get; set; } = 0.35;
+        /// <summary>Label width per character, for the same fallback.</summary>
+        public double CharWidth { get; set; } = 0.13;
 
-        /// <summary>Vertical distance between neighbouring spread-out tags.</summary>
-        public double RowSpacing { get; set; } = 0.3;
+        /// <summary>Clear space kept around every label.</summary>
+        public double Padding { get; set; } = 0.04;
 
-        /// <summary>Horizontal distance between columns, when a pile has more tags than fit in one.</summary>
-        public double ColumnSpacing { get; set; } = 0.7;
+        /// <summary>How far a moved tag sits off its old position, at least, so it clears what it was piled on.</summary>
+        public double MinOffset { get; set; } = 0.25;
 
-        /// <summary>Tags per column before the next column starts.</summary>
-        public int MaxPerColumn { get; set; } = 8;
+        /// <summary>Step between the columns tried beside the pile.</summary>
+        public double ColumnStep { get; set; } = 0.12;
+
+        /// <summary>How many columns out and how many rows up and down are tried before a tag is left where it is.</summary>
+        public int MaxColumns { get; set; } = 12;
+
+        public int MaxRows { get; set; } = 40;
+
+        /// <summary>
+        ///     How much more a vertical move costs than a horizontal one. Above 1, tags stay level with what they tag
+        ///     and leaders run near-horizontal, as in a hand-tidied riser.
+        /// </summary>
+        public double VerticalWeight { get; set; } = 1.5;
     }
 
-    /// <summary>One tag going in: where its head is now, and where the thing it tags is (used only for ordering).</summary>
+    /// <summary>One tag going in: where its head is now, how big its label is, and whether it may be moved.</summary>
     public sealed class TagItem
     {
-        public TagItem(int id, double headRight, double headUp, double hostRight, double hostUp)
-        {
-            Id = id;
-            HeadRight = headRight;
-            HeadUp = headUp;
-            HostRight = hostRight;
-            HostUp = hostUp;
-        }
-
-        public int Id { get; }
-        public double HeadRight { get; }
-        public double HeadUp { get; }
-        public double HostRight { get; }
-        public double HostUp { get; }
-    }
-
-    /// <summary>One tag coming out: the head position to move it to, in the same view coordinates as the input.</summary>
-    public sealed class TagPlacement
-    {
-        public TagPlacement(int id, double right, double up)
+        public TagItem(int id, double right, double up, double width, double height, bool movable = true)
         {
             Id = id;
             Right = right;
             Up = up;
+            Width = width;
+            Height = height;
+            Movable = movable;
+        }
+
+        public int Id { get; }
+
+        /// <summary>The label's centre, in view coordinates (model feet): Right along the view's right direction.</summary>
+        public double Right { get; }
+
+        public double Up { get; }
+        public double Width { get; }
+        public double Height { get; }
+        public bool Movable { get; }
+    }
+
+    /// <summary>One tag coming out: where to move it to (view coordinates), and whether that is a move at all.</summary>
+    public sealed class TagPlacement
+    {
+        public TagPlacement(int id, double right, double up, bool moved)
+        {
+            Id = id;
+            Right = right;
+            Up = up;
+            Moved = moved;
         }
 
         public int Id { get; }
         public double Right { get; }
         public double Up { get; }
+        public bool Moved { get; }
     }
 
     /// <summary>
-    ///     The layout rule, with no Revit types in it so it can be tested without Revit
-    ///     (<c>tests/TagLayoutTest</c>). Coordinates are view coordinates: Right along the view's right direction, Up along its
-    ///     up direction, both in model feet.
+    ///     The layout rule, with no Revit types in it so it can be tested without Revit (<c>tests/TagLayoutTest</c>).
     ///     <para>
-    ///         Piles are found by single-link clustering of the tag heads. Each pile's tags are lined up in tidy columns
-    ///         beside the pile's chosen corner - nearest column first, filled from the top - ordered by where the tagged
-    ///         thing is, highest first, so the leader lines run side by side instead of crossing.
+    ///         A tag is only touched if its label overlaps another tag's. Those tags are then placed one at a time -
+    ///         highest first - at the free spot nearest where each is now, beside the pile, on a left or right column
+    ///         and level with its old height where it can be. "Free" means clear of every tag that is not moving and
+    ///         of every tag already placed. A tag with no free spot within reach is left alone.
     ///     </para>
     /// </summary>
     public static class TagLayout
@@ -91,88 +108,139 @@ namespace BlakesTesting.Tags
             if (viewScale <= 0) throw new ArgumentOutOfRangeException(nameof(viewScale));
 
             double ft = viewScale / 12.0; // paper inches -> model feet
-            double radius = options.ClusterRadius * ft;
-            double gap = options.Gap * ft;
-            double row = options.RowSpacing * ft;
-            double col = options.ColumnSpacing * ft;
-            int perColumn = Math.Max(1, options.MaxPerColumn);
+            double pad = options.Padding * ft;
+            double minOffset = options.MinOffset * ft;
+            double colStep = Math.Max(1e-6, options.ColumnStep) * ft;
+            double rowStep = (items.Count == 0 ? options.LabelHeight : items.Max(t => t.Height)) + pad * 2;
 
-            // +1 sends tags to the right/up of the pile, -1 to the left/down.
-            double sx = options.Direction == SpreadDirection.BottomLeft || options.Direction == SpreadDirection.TopLeft ? -1 : 1;
-            double sy = options.Direction == SpreadDirection.BottomLeft || options.Direction == SpreadDirection.BottomRight ? -1 : 1;
-
-            var result = new List<TagPlacement>(items.Count);
-            foreach (List<TagItem> pile in Cluster(items, radius))
+            // Which tags are piled: those whose (padded) label touches another's.
+            var all = new BoxGrid(Math.Max(rowStep, 1e-3) * 2);
+            for (int i = 0; i < items.Count; i++) all.Add(i, MakeBox(items[i], items[i].Right, items[i].Up, pad));
+            var piled = new HashSet<int>();
+            for (int i = 0; i < items.Count; i++)
             {
-                // Piles of one are already readable - leave them where the user put them.
-                if (pile.Count < 2)
+                if (!items[i].Movable) continue;
+                Box mine = MakeBox(items[i], items[i].Right, items[i].Up, pad);
+                if (all.Query(mine).Any(j => j != i)) piled.Add(i);
+            }
+
+            // Obstacles: everything that is not being moved, where it is.
+            var grid = new BoxGrid(Math.Max(rowStep, 1e-3) * 2);
+            for (int i = 0; i < items.Count; i++)
+                if (!piled.Contains(i)) grid.Add(i, MakeBox(items[i], items[i].Right, items[i].Up, pad));
+
+            // Spots to try, nearest first. dx is measured from the label's own edge (added per tag below).
+            var spots = new List<(double dx, double dy, double cost)>();
+            var sides = options.Side == SpreadSide.Left ? new[] { -1 } : options.Side == SpreadSide.Right ? new[] { 1 } : new[] { -1, 1 };
+            foreach (int side in sides)
+            {
+                for (int c = 0; c < Math.Max(1, options.MaxColumns); c++)
                 {
-                    result.AddRange(pile.Select(t => new TagPlacement(t.Id, t.HeadRight, t.HeadUp)));
-                    continue;
-                }
-
-                // The pile's edge nearest the destination corner: the spread starts one gap beyond it.
-                double edgeRight = sx < 0 ? pile.Min(t => t.HeadRight) : pile.Max(t => t.HeadRight);
-                double edgeUp = sy < 0 ? pile.Min(t => t.HeadUp) : pile.Max(t => t.HeadUp);
-
-                // Ordered so leaders run parallel: top-most host first when going down, bottom-most first when going
-                // up; ties by the host's horizontal position, mirrored the same way. Id last, so it is deterministic.
-                List<TagItem> ordered = pile
-                    .OrderBy(t => sy * t.HostUp)
-                    .ThenBy(t => sx * t.HostRight)
-                    .ThenBy(t => t.Id)
-                    .ToList();
-
-                for (int i = 0; i < ordered.Count; i++)
-                {
-                    int column = i / perColumn;
-                    int slot = i % perColumn;
-                    double right = edgeRight + sx * (gap + column * col);
-                    double up = edgeUp + sy * (gap + slot * row);
-                    result.Add(new TagPlacement(ordered[i].Id, right, up));
+                    for (int r = -options.MaxRows; r <= options.MaxRows; r++)
+                    {
+                        double dx = side * (minOffset + c * colStep);
+                        double dy = r * rowStep;
+                        double cost = Math.Sqrt(dx * dx + options.VerticalWeight * options.VerticalWeight * dy * dy);
+                        spots.Add((dx, dy, cost));
+                    }
                 }
             }
 
-            return result;
+            // Ties go to the left (the way tags are usually tidied), then the smaller step.
+            spots.Sort((a, b) =>
+            {
+                int byCost = a.cost.CompareTo(b.cost);
+                if (byCost != 0) return byCost;
+                return a.dx.CompareTo(b.dx);
+            });
+
+            var placements = new TagPlacement[items.Count];
+            foreach (int i in piled.OrderByDescending(k => items[k].Up).ThenBy(k => items[k].Right).ThenBy(k => items[k].Id))
+            {
+                TagItem t = items[i];
+                double halfW = t.Width / 2;
+                bool placed = false;
+                foreach (var spot in spots)
+                {
+                    double right = t.Right + spot.dx + Math.Sign(spot.dx) * halfW;
+                    double up = t.Up + spot.dy;
+                    Box candidate = MakeBox(t, right, up, pad);
+                    if (grid.Query(candidate).Any()) continue;
+                    grid.Add(i, candidate);
+                    placements[i] = new TagPlacement(t.Id, right, up, true);
+                    placed = true;
+                    break;
+                }
+
+                if (!placed)
+                {
+                    grid.Add(i, MakeBox(t, t.Right, t.Up, pad));
+                    placements[i] = new TagPlacement(t.Id, t.Right, t.Up, false);
+                }
+            }
+
+            for (int i = 0; i < items.Count; i++)
+                placements[i] ??= new TagPlacement(items[i].Id, items[i].Right, items[i].Up, false);
+            return placements.ToList();
         }
 
-        /// <summary>Single-link clustering: two tags are in the same pile if a chain of tags, each within <paramref name="radius" /> of the next, joins them.</summary>
-        private static List<List<TagItem>> Cluster(IReadOnlyList<TagItem> items, double radius)
+        private static Box MakeBox(TagItem t, double right, double up, double pad) =>
+            new Box(right - t.Width / 2 - pad, up - t.Height / 2 - pad, right + t.Width / 2 + pad, up + t.Height / 2 + pad);
+
+        private readonly struct Box
         {
-            int n = items.Count;
-            int[] parent = Enumerable.Range(0, n).ToArray();
-
-            int Find(int x)
+            public Box(double minX, double minY, double maxX, double maxY)
             {
-                while (parent[x] != x)
+                MinX = minX;
+                MinY = minY;
+                MaxX = maxX;
+                MaxY = maxY;
+            }
+
+            public double MinX { get; }
+            public double MinY { get; }
+            public double MaxX { get; }
+            public double MaxY { get; }
+
+            public bool Overlaps(Box o) => MinX < o.MaxX && o.MinX < MaxX && MinY < o.MaxY && o.MinY < MaxY;
+        }
+
+        /// <summary>A hash grid of boxes, so a thousand tags are not each compared with a thousand others.</summary>
+        private sealed class BoxGrid
+        {
+            private readonly double _cell;
+            private readonly Dictionary<(long, long), List<(int id, Box box)>> _cells = new Dictionary<(long, long), List<(int, Box)>>();
+
+            public BoxGrid(double cell) => _cell = cell;
+
+            public void Add(int id, Box box)
+            {
+                foreach ((long, long) key in Keys(box))
                 {
-                    parent[x] = parent[parent[x]];
-                    x = parent[x];
+                    if (!_cells.TryGetValue(key, out List<(int, Box)>? list)) _cells[key] = list = new List<(int, Box)>();
+                    list.Add((id, box));
                 }
-
-                return x;
             }
 
-            double r2 = radius * radius;
-            for (int a = 0; a < n; a++)
+            public IEnumerable<int> Query(Box box)
             {
-                for (int b = a + 1; b < n; b++)
+                var seen = new HashSet<int>();
+                foreach ((long, long) key in Keys(box))
                 {
-                    double dr = items[a].HeadRight - items[b].HeadRight;
-                    double du = items[a].HeadUp - items[b].HeadUp;
-                    if (dr * dr + du * du <= r2) parent[Find(a)] = Find(b);
+                    if (!_cells.TryGetValue(key, out List<(int id, Box box)>? list)) continue;
+                    foreach ((int id, Box other) in list)
+                        if (other.Overlaps(box) && seen.Add(id)) yield return id;
                 }
             }
 
-            var piles = new Dictionary<int, List<TagItem>>();
-            for (int i = 0; i < n; i++)
+            private IEnumerable<(long, long)> Keys(Box b)
             {
-                int root = Find(i);
-                if (!piles.TryGetValue(root, out List<TagItem>? list)) piles[root] = list = new List<TagItem>();
-                list.Add(items[i]);
+                long x0 = (long)Math.Floor(b.MinX / _cell), x1 = (long)Math.Floor(b.MaxX / _cell);
+                long y0 = (long)Math.Floor(b.MinY / _cell), y1 = (long)Math.Floor(b.MaxY / _cell);
+                for (long x = x0; x <= x1; x++)
+                    for (long y = y0; y <= y1; y++)
+                        yield return (x, y);
             }
-
-            return piles.Values.ToList();
         }
     }
 }

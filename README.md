@@ -29,11 +29,15 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 
 | Command | What it does |
 | --- | --- |
-| `SpreadTagsBottomLeft` | Tags piled on top of each other (the riser numbers at the top of each stack) are moved into tidy columns to the **bottom-left** of the pile, leaders on, ordered by what they tag so leaders do not cross. Uses the selected tags, or every tag in the active view. One Undo. |
-| `SpreadTagsBottomRight` | The same towards the bottom-right. |
+| `SpreadTags` | Un-piles overlapping tags. Only tags whose labels overlap another tag are moved - each to the free spot **nearest where it is now**, in a column to the left or right of the pile, level with its old height where it can be, leader on. Tags that are already readable stay put and moved tags keep clear of them. Uses the selected tags, or every tag in the active view. One Undo. |
+| `SpreadTagsLeft` / `SpreadTagsRight` | The same, but only to one side - for a view with no room on the other. |
 
-Tuning is in `SpreadOptions` (`Tags/TagLayout.cs`), in **paper inches**, so it looks the same at any view scale:
-`ClusterRadius` (how close counts as piled), `Gap`, `RowSpacing`, `ColumnSpacing`, `MaxPerColumn`. Pinned tags are left alone.
+How it decides, in `Tags/TagLayout.cs`: tags are placed one at a time, highest first, at the nearest free spot, where a move up or
+down costs `VerticalWeight` (1.5) times a move sideways, so leaders run near-horizontal. Everything is in **paper inches**, so a
+layout looks the same at any view scale: `LabelHeight` and `CharWidth` (label size, used when a tag's real size cannot be read -
+a tag with a leader), `Padding`, `MinOffset` (how far off its old spot a moved tag sits), `ColumnStep`, `MaxColumns`, `MaxRows`.
+Pinned tags are left alone. Known limits: it does not look at pipes or other drawing lines, only at tags, and a big label with a
+leader is sized from its text, so set `LabelHeight` to match your tag text if big ones get overlapped.
 The layout rule has no Revit types in it and is tested without Revit:
 
     dotnet run --project tests/TagLayoutTest
