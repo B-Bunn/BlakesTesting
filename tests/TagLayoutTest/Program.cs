@@ -100,6 +100,18 @@ var avoid = TagLayout.Compute(piled, new SpreadOptions(), scale, pipe);
 Check(OnPipe(ignore) > 0 && OnPipe(avoid) < OnPipe(ignore), $"labels on the pipes: {OnPipe(ignore)} ignoring it, {OnPipe(avoid)} avoiding it");
 Check(OnPipe(avoid) == 0, "no label sits on a pipe when there is room beside them");
 
+// Selected tags that are already spread out (overlap nothing) are re-laid out: tags far from the thing they point at come back,
+// and crossed leaders are untangled; without 'force' they would have been left alone.
+var far = new List<TagItem>();
+for (int i = 0; i < 12; i++) far.Add(new TagItem(i, 100 + (i % 2 == 0 ? -1 : 1) * (6 + i * 0.3), 500 - i * 3 + (i % 3) * 5, w, h, true, 100 + rng.NextDouble() * 0.5, 500 - i * 3 + rng.NextDouble() * 0.5, force: false));
+var noForce = TagLayout.Compute(far, options, scale);
+Check(noForce.All(p => !p.Moved), "tags that overlap nothing are left alone without force");
+var forced = far.Select(t => new TagItem(t.Id, t.Right, t.Up, t.Width, t.Height, true, t.AnchorRight, t.AnchorUp, force: true)).ToList();
+var rf = TagLayout.Compute(forced, options, scale);
+double Dist(IEnumerable<(double r, double u, TagItem t)> xs) => xs.Sum(x => Math.Sqrt(Math.Pow(x.r - x.t.AnchorRight, 2) + Math.Pow(x.u - x.t.AnchorUp, 2)));
+double d0 = Dist(forced.Select(t => (t.Right, t.Up, t))), d1 = Dist(rf.Select(p => (p.Right, p.Up, forced.First(t => t.Id == p.Id))));
+Check(rf.Any(p => p.Moved) && d1 < d0, $"forced re-layout brings leaders closer: total length {d0 / ft:F1} -> {d1 / ft:F1} in of paper");
+
 // A pile too dense for the reach: the tags that cannot be placed close by stay put and are flagged, not flung away.
 var dense = Enumerable.Range(0, 60).Select(i => new TagItem(i, 100 + rng.NextDouble() * 0.2, 500 + rng.NextDouble() * 0.2, w, h)).ToList();
 var rd = TagLayout.Compute(dense, new SpreadOptions { MaxDistance = 0.5 }, scale);

@@ -67,7 +67,8 @@ namespace BlakesTesting.Tags
     /// <summary>One tag going in: where its head is now, how big its label is, and whether it may be moved.</summary>
     public sealed class TagItem
     {
-        public TagItem(int id, double right, double up, double width, double height, bool movable = true)
+        public TagItem(int id, double right, double up, double width, double height, bool movable = true,
+            double? anchorRight = null, double? anchorUp = null, bool force = false)
         {
             Id = id;
             Right = right;
@@ -75,6 +76,9 @@ namespace BlakesTesting.Tags
             Width = width;
             Height = height;
             Movable = movable;
+            AnchorRight = anchorRight ?? right;
+            AnchorUp = anchorUp ?? up;
+            Force = force;
         }
 
         public int Id { get; }
@@ -86,6 +90,17 @@ namespace BlakesTesting.Tags
         public double Width { get; }
         public double Height { get; }
         public bool Movable { get; }
+
+        /// <summary>
+        ///     Where the tag's leader ends - the point on the tagged element it points at. Tags are placed close to this, and
+        ///     leaders are untangled from here. Defaults to the tag's own position (a tag not yet moved sits next to it).
+        /// </summary>
+        public double AnchorRight { get; }
+
+        public double AnchorUp { get; }
+
+        /// <summary>Laid out again even if it overlaps nothing (the user selected it on purpose).</summary>
+        public bool Force { get; }
     }
 
     /// <summary>One tag coming out: where to move it to (view coordinates), and whether that is a move at all.</summary>
@@ -164,6 +179,7 @@ namespace BlakesTesting.Tags
             for (int i = 0; i < items.Count; i++)
             {
                 if (!items[i].Movable) continue;
+                if (items[i].Force) { piled.Add(i); continue; }
                 Box mine = MakeBox(items[i], items[i].Right, items[i].Up, pad);
                 if (all.Query(mine).Any(j => j != i)) piled.Add(i);
             }
@@ -207,7 +223,7 @@ namespace BlakesTesting.Tags
 
             var placements = new TagPlacement[items.Count];
             var spotHits = new Dictionary<int, bool>();
-            foreach (int i in piled.OrderByDescending(k => items[k].Up).ThenBy(k => items[k].Right).ThenBy(k => items[k].Id))
+            foreach (int i in piled.OrderByDescending(k => items[k].AnchorUp).ThenBy(k => items[k].AnchorRight).ThenBy(k => items[k].Id))
             {
                 TagItem t = items[i];
                 double halfW = t.Width / 2;
@@ -216,8 +232,8 @@ namespace BlakesTesting.Tags
                 foreach (var spot in spots)
                 {
                     if (spot.cost >= best) break; // every later spot costs at least this much more
-                    double right = t.Right + spot.dx + Math.Sign(spot.dx) * halfW;
-                    double up = t.Up + spot.dy;
+                    double right = t.AnchorRight + spot.dx + Math.Sign(spot.dx) * halfW;
+                    double up = t.AnchorUp + spot.dy;
                     if (grid.Query(MakeBox(t, right, up, pad)).Any()) continue;
                     bool hits = penalty > 0 && lines.Hits(MakeBox(t, right, up, 0));
                     double total = spot.cost + (hits ? penalty : 0);
@@ -270,10 +286,10 @@ namespace BlakesTesting.Tags
 
             var neighbours = new Dictionary<int, List<int>>();
             foreach (int i in moved)
-                neighbours[i] = moved.Where(j => j != i && Math.Abs(items[i].Right - items[j].Right) < near && Math.Abs(items[i].Up - items[j].Up) < near).ToList();
+                neighbours[i] = moved.Where(j => j != i && Math.Abs(items[i].AnchorRight - items[j].AnchorRight) < near && Math.Abs(items[i].AnchorUp - items[j].AnchorUp) < near).ToList();
 
             // Leaders as segments: from the old position to the label's near edge (its centre, shortened by half a label).
-            DrawingLine Leader(int i, (double r, double u) p) => new DrawingLine(items[i].Right, items[i].Up, p.r, p.u);
+            DrawingLine Leader(int i, (double r, double u) p) => new DrawingLine(items[i].AnchorRight, items[i].AnchorUp, p.r, p.u);
 
             int Crossings(int i, (double r, double u) pi, IEnumerable<int> others, Func<int, (double r, double u)> where)
             {
@@ -287,10 +303,10 @@ namespace BlakesTesting.Tags
             foreach (int i in moved) foreach (int j in neighbours[i]) if (i < j && Cross(Leader(i, pos[i]), Leader(j, pos[j]))) total++;
             if (stats != null) stats.CrossingsBefore = total;
 
-            double Length(int i, (double r, double u) p) => Math.Sqrt(Math.Pow(p.r - items[i].Right, 2) + Math.Pow(p.u - items[i].Up, 2));
+            double Length(int i, (double r, double u) p) => Math.Sqrt(Math.Pow(p.r - items[i].AnchorRight, 2) + Math.Pow(p.u - items[i].AnchorUp, 2));
 
             bool Side(int i, (double r, double u) p) =>
-                options.Side == SpreadSide.Both || (options.Side == SpreadSide.Left ? p.r < items[i].Right : p.r > items[i].Right);
+                options.Side == SpreadSide.Both || (options.Side == SpreadSide.Left ? p.r < items[i].AnchorRight : p.r > items[i].AnchorRight);
 
             for (int pass = 0; pass < 6; pass++)
             {

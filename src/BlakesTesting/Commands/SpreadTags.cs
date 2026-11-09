@@ -87,7 +87,9 @@ namespace BlakesTesting.Commands
                 (double width, double height, bool real) = LabelSize(tag, view, right, up, options, ft);
                 if (real) measured++;
                 byId[id] = tag;
-                items.Add(new TagItem(id, head.DotProduct(right), head.DotProduct(up), width, height, movable));
+                double hr = head.DotProduct(right), hu = head.DotProduct(up);
+                (double ar, double au) = LeaderEnd(doc, tag, hr, hu, right, up);
+                items.Add(new TagItem(id, hr, hu, width, height, movable, ar, au, force: useSelection && movable));
             }
 
             List<DrawingLine> drawing = options.GeometryPenalty > 0 ? DrawingLines(doc, view, right, up, ft) : new List<DrawingLine>();
@@ -125,7 +127,9 @@ namespace BlakesTesting.Commands
             int stuck = placements.Count(p => p.Stuck);
             List<TagItem> sizes = items.Where(i => i.Movable).OrderBy(i => i.Height).ToList();
             TagItem? mid = sizes.Count > 0 ? sizes[sizes.Count / 2] : null;
-            string report = $"Spread {moved} overlapping tag(s) {scope}; {candidates - moved - stuck} already readable.";
+            string report = useSelection
+                ? $"Re-laid out {moved} of {candidates} selected tag(s); {candidates - moved - stuck} were already in the best spot found."
+                : $"Spread {moved} overlapping tag(s) {scope}; {candidates - moved - stuck} already readable.";
             if (stuck > 0) report += $"\n{stuck} overlap but have no free spot within {options.MaxDistance} in of paper - left where they are.";
             report += $"\nLeader crossings: {stats.CrossingsBefore} -> {stats.CrossingsAfter}. Read {drawing.Count} drawing line(s); {stats.OnDrawing} tag(s) still sit on the drawing.";
             if (mid != null) report += $"\nLabel size used (typical): {mid.Width / ft:F2} x {mid.Height / ft:F2} in of paper; {measured} of {items.Count} measured from the tag, the rest estimated.";
@@ -184,6 +188,45 @@ namespace BlakesTesting.Commands
             }
 
             return lines;
+        }
+
+        /// <summary>
+        ///     Where the tag's leader ends, in view coordinates: the point on the first tagged element nearest the tag - the
+        ///     closest point of a pipe's run, a fitting's own point, or the middle of anything else. A tag whose element cannot
+        ///     be read is taken to point at its own position.
+        /// </summary>
+        private static (double r, double u) LeaderEnd(Document doc, IndependentTag tag, double headR, double headU, XYZ right, XYZ up)
+        {
+            try
+            {
+                foreach (ElementId id in tag.GetTaggedLocalElementIds())
+                {
+                    Element? e = doc.GetElement(id);
+                    if (e == null) continue;
+                    if (e.Location is LocationCurve lc && lc.Curve != null)
+                    {
+                        XYZ a = lc.Curve.GetEndPoint(0), b = lc.Curve.GetEndPoint(1);
+                        double ar = a.DotProduct(right), au = a.DotProduct(up), br = b.DotProduct(right), bu = b.DotProduct(up);
+                        double dr = br - ar, du = bu - au, len2 = dr * dr + du * du;
+                        double t = len2 < 1e-12 ? 0 : Math.Max(0, Math.Min(1, ((headR - ar) * dr + (headU - au) * du) / len2));
+                        return (ar + dr * t, au + du * t);
+                    }
+
+                    if (e.Location is LocationPoint lp) return (lp.Point.DotProduct(right), lp.Point.DotProduct(up));
+                    BoundingBoxXYZ? box = e.get_BoundingBox(null);
+                    if (box != null)
+                    {
+                        XYZ c = (box.Min + box.Max) * 0.5;
+                        return (c.DotProduct(right), c.DotProduct(up));
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // fall through
+            }
+
+            return (headR, headU);
         }
 
         /// <summary>Turn the leader on so the tag still points at what it tags; a tag family without one just moves.</summary>
