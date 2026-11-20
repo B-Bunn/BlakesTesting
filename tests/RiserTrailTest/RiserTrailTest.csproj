@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Revit-free check of the riser trail rule and the pex rounding ladder. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\BlakesTesting\Risers\RiserTrail.cs" Link="RiserTrail.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Risers\CutLengthRules.cs" Link="CutLengthRules.cs" />
+  </ItemGroup>
+</Project>
