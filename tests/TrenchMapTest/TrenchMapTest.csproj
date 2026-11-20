@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Revit-free check of Trench Map's rules: length text, settings file, the trench plan and the legend. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\BlakesTesting\Trench\TrenchText.cs" Link="TrenchText.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Trench\TrenchSettings.cs" Link="TrenchSettings.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Trench\TrenchPlan.cs" Link="TrenchPlan.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Risers\ColorSettings.cs" Link="ColorSettings.cs" />
+  </ItemGroup>
+</Project>

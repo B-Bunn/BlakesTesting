@@ -82,4 +82,28 @@
     <VendorId>BLAKE</VendorId>
     <VendorDescription>Blake's testing</VendorDescription>
   </AddIn>
+  <AddIn Type="Command">
+    <Name>Trench Map</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.TrenchMap</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e00b</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
+  <AddIn Type="Command">
+    <Name>Trench Map Settings</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.TrenchMapOptions</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e00c</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
+  <AddIn Type="Command">
+    <Name>Clear Trench Map</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.ClearTrenchMap</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e00d</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
 </RevitAddIns>

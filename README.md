@@ -44,6 +44,9 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `SetSelectedExactCutLength` | The other override: puts the **selected** pipes' real length into MFG.CutLength. |
 | `RiserPexColorSettings` | Opens the settings for the riser coloring (below): on/off, which pipes get painted, and the two colors. Saved per user in `%AppData%\BlakesTesting\RiserPexColors.ini`. |
 | `ClearRiserPexColors` | Takes the riser colors back off the pipes in the active view (the selected pipes, or all of them). Only a pipe colored one of the two settings colors is touched. |
+| `TrenchMap` | A **color-coded trench plan with a legend** in the active plan view: each trench is a filled rectangle along the pipe, as wide as BIM Tools' Calculate Spoils digs it at that depth, **colored by width and depth together**, with the legend off to the right of the trench (color, width, depth range, footage). Uses the selected pipes, or every pipe in the view. Details below. |
+| `TrenchMapOptions` | The Trench Map settings: spoils depth or bottom of pipe, the floor, the width rule, the depths the colors change at, see-through. Saved per user in `%AppData%\BlakesTesting\TrenchMap.ini`. |
+| `ClearTrenchMap` | Takes the trench map (colored regions and legend) out of the active view. |
 
 `CopyHostParametersToNested` matches parameters the way Revit does: a shared parameter by GUID, a built-in by its id, a family parameter by name *and* kind of value (a text "Size" is never forced into a numeric one). Read-only targets (e.g. already driven by the host through an association) are skipped, and so are built-ins that place or host an element (level, offsets, host, phase, workset, design option, family/type) - copying those would move the nested part. Everything else, Mark and Comments included, is copied. Type parameters are not touched. **Only nested families set to *Shared* in the family editor exist as separate elements in a project**, so a nested part that still is not picked up is not shared - open the family, select the nested family, tick *Shared*, reload. A host parameter a nested family does not have at all cannot be copied; the dialog lists those (add the parameter to that family, or bind the project/shared parameter to its category). **Not verified in Revit.**
 
@@ -108,6 +111,40 @@ The trail rule and the ladder have no Revit types in them and are tested without
     dotnet run --project tests/RiserTrailTest
 
 **Not verified in Revit.** Try it on a copy of a job with two different riser setups: `SelectRiserPex` first and Temporary Isolate the selection; then `RoundRiserPexLengths`, and check MFG.CutLength in a schedule against the pipes' own length. Things to look for: a riser pipe left out, a horizontal or a fixture stub-out picked up, a manifold that found no riser or had its inlet guessed (the dialog and the log name them), and a tower through a non-PEX section.
+
+### Trench Map
+
+Built on BIM Tools' **Calculate Spoils** (`BIM-Tools/src/TPITools/TPITools/TopconSurface/SpoilsRules.cs`, `CalculateSpoils.cs`,
+`SpoilsFloors.cs` and `TopconSurfaceRules.BottomOfPipe`), so the trench on the map is as deep and as wide as the Spoils tool digs
+it. The rules are copied here, not referenced (this is a scratch DLL with no link to `BIMTools.dll`), in `Trench/` - minus Spoils'
+volume count and its sluff (the map draws the bottom width):
+
+- **Depth** is read at every pipe end and every foot along it: the top of the trench (the floor less the *floor offset*) down to the
+  bottom of the pipe's outside (less any *dig below the pipe*). The floor is one **level**, or the **floors** a parameter picks, read at
+  their real top by a vertical ray (holes bridged, slopes followed). Pipes steeper than 45 degrees are risers and have no trench.
+- **Width** comes from that depth by the width rule: shallower than 4'-0" is 18", deeper is 24" (rows and the deeper width are settings).
+- **Color** is one color per width x depth-band combination. The bands start at the *depth marks* (default 4'-0", 8'-0", 12'-0": under
+  4', 4' to 8', 8' to 12', 12' and deeper). A combination is the same color from run to run (the table is fixed by the settings alone).
+  A box splits where the depth crosses a band, so one drawn piece is one color.
+- **Color the depth by** *Spoils depth* (top of trench to bottom of trench) or *Bottom of pipe* (the floor to the bottom of the pipe: the
+  offset and the bedding left out - "how deep is the pipe"). The width always follows the spoils depth.
+- The first run (or one whose level / floors the model does not have) opens the settings window to ask for the floor offset and the floor.
+  Lengths are typed `4'-6"`, `54"` or feet (`4.5`).
+- Drawn as **filled regions** (detail items: this view only) of filled region types named `Trench Map W18 D0`, one per combination, in the
+  solid fill and the combination's color, **see-through** (30% by default, so the pipes and the plan show through) and with invisible
+  outlines; the **legend** is the same regions as swatches beside text notes of the types `Trench Map Legend` / `Trench Map Legend Title`,
+  to the right of the trench, sized from the view's scale. Everything is found again by those type names, so **Clear Trench Map** (and the
+  next run) removes exactly the map and never a filled region you drew. One transaction: one Undo. The unused types stay in the project.
+
+The rules have no Revit types in them and are tested without Revit:
+
+    dotnet run --project tests/TrenchMapTest
+
+**Not verified in Revit.** Try it on a copy of a plan with a trench run: `TrenchMapOptions` first (floor offset, level), then `TrenchMap`
+with nothing selected, then with a few pipes selected; check the widths and bands against Calculate Spoils' review shapes, that the
+legend sits clear of the trench at 1/8" and 1/4" scale, that the colors show through at 30% (and what a Revit that refuses the
+transparency override looks like), a cropped view (the legend can fall outside the crop), a model with a sloped slab (Floors mode), and
+Undo.
 
 ## Adding a scratch command
 
