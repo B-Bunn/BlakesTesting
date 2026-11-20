@@ -40,8 +40,8 @@ Check(!CutLengthRules.IsUsable(0) && !CutLengthRules.IsUsable(double.NaN) && !Cu
     "0, NaN and infinity are not writable lengths");
 for (double ft = 0.05; ft < 40; ft += 0.0137)
 {
-    double r = CutLengthRules.RoundPexFeet(ft);
-    if (r < ft - 1e-9 || r - ft > 1.0 + 1e-9) { Check(false, $"rounding {ft} ft gave {r}"); break; }
+    double rounded = CutLengthRules.RoundPexFeet(ft);
+    if (rounded < ft - 1e-9 || rounded - ft > 1.0 + 1e-9) { Check(false, $"rounding {ft} ft gave {rounded}"); break; }
 }
 Check(true, "rounding never goes down and never adds a foot or more (sweep 0.05 - 40 ft)");
 
