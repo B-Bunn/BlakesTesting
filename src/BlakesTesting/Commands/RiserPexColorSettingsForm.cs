@@ -41,14 +41,14 @@ namespace BlakesTesting.Commands
 
             Controls.Add(new Label { Text = "What to color", Font = new Font(Font, FontStyle.Bold), AutoSize = true, Left = 16, Top = y });
             y += 24;
-            _rounded.Text = "PEX that was rounded  (the riser)";
+            _rounded.Text = "PEX that was rounded  (the riser and its branch to the manifold)";
             _rounded.SetBounds(32, y, 400, 22);
             Controls.Add(_rounded);
             _roundedColor.SetBounds(360, y - 2, 96, 26);
             StyleSwatch(_roundedColor, () => _settings.RoundedColor, c => _settings.RoundedColor = c);
             Controls.Add(_roundedColor);
             y += 30;
-            _otherPex.Text = "PEX that was not rounded  (branches, mains)";
+            _otherPex.Text = "PEX that was not rounded  (other branches, mains)";
             _otherPex.SetBounds(32, y, 320, 22);
             Controls.Add(_otherPex);
             _notRoundedColor.SetBounds(360, y - 2, 96, 26);

@@ -38,7 +38,7 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `SpreadTags` | Un-piles overlapping tags. Only tags whose labels overlap another tag are moved - each to the free spot **nearest where it is now**, in a column to the left or right of the pile, level with its old height where it can be, leader on. Tags that are already readable stay put and moved tags keep clear of them. Uses the selected tags - **which are always re-laid out, even if they no longer overlap** (select tags you spread earlier to tidy them again) - or, with nothing selected, only the overlapping tags in the active view. One Undo. |
 | `SpreadTagsLeft` / `SpreadTagsRight` | The same, but only to one side - for a view with no room on the other. |
 | `CopyHostParametersToNested` | Copies every **instance parameter of a host family onto the families nested inside it** (and the ones nested in those), so a view filter, schedule or Isolate that reads a parameter sees the whole assembly, not just the hanger. Uses the selected families, or - with nothing selected - every family in the active view that has nested families. Shows how many values will change (and which host parameters a nested family does not have) and asks before writing; one Undo. Afterwards the hosts and their nested parts are left **selected**, so Temporary Isolate Element keeps all of it. |
-| `RoundRiserPexLengths` | Writes **MFG.CutLength** on every pipe: the PEX serving a **water riser (tower)** is rounded **up** by the Round Pex Lengths rules (3" steps to 9'-0", then whole feet); every other pipe - PEX distribution, mains, branches, other materials - gets its **real length**. The pipe's own length is never touched, so model groups stay whole. Finds the riser from the **4- and 6-port manifolds** (below), shows what it found, and asks before writing; one Undo. With nothing selected: the whole model. With **pipes** selected: only those are written. With **manifolds** selected: only those manifolds' risers. |
+| `RoundRiserPexLengths` | Writes **MFG.CutLength** on every pipe: the PEX serving a **water riser (tower)** - the vertical pipes **and the horizontal from each manifold back to them** - is rounded **up** by the Round Pex Lengths rules (3" steps to 9'-0", then whole feet); every other pipe - PEX distribution, mains, branches, other materials - gets its **real length**. The pipe's own length is never touched, so model groups stay whole. Finds the riser from the **4- and 6-port manifolds** (below), shows what it found, and asks before writing; one Undo. With nothing selected: the whole model. With **pipes** selected: only those are written. With **manifolds** selected: only those manifolds' risers. |
 | `SelectRiserPex` | The preview: finds the riser pipes and **selects** them, writing nothing - Temporary Isolate the selection to check it is the tower. Also writes a per-manifold log to `%TEMP%\BlakesTesting-RiserPex.txt`. |
 | `RoundSelectedPexAsRiser` | Manual override for a tower the trail missed: rounds the **selected** pipes up the pex ladder into MFG.CutLength, riser or not. |
 | `SetSelectedExactCutLength` | The other override: puts the **selected** pipes' real length into MFG.CutLength. |
@@ -71,8 +71,8 @@ view: run it with nothing selected, check the Undo, then with a few tags selecte
 Everything that gets rounded is connected to a 4- or 6-port manifold, so the trail starts there:
 
 1. Leave the manifold by its **inlet** (its biggest port - the 3/4" on a 1/2" manifold; the outlets go to fixtures and are never followed).
-2. Walk the **horizontal PEX** from the inlet - the branch into the unit. It is kept at its real length.
-3. The first **vertical PEX** pipe reached is the riser. Follow it through couplings, tees, valves and unions, marking every vertical PEX pipe - floor after floor, through the tees where each floor's branch leaves - until the trail turns horizontal (a tee's branch, the elbow into a main at the top or bottom). Those marked pipes are rounded.
+2. Walk the **horizontal PEX** from the inlet until a vertical is reached. The pipes **on the way from the manifold to that vertical** are the manifold's own branch back to the riser, and they are **rounded too**. Horizontal pipe that is *not* on that way - a side branch off a tee, a run that leaves the riser for a main - is not.
+3. The first **vertical PEX** pipe reached is the riser. Follow it through couplings, tees, valves and unions, marking every vertical PEX pipe - floor after floor, through the tees where each floor's branch leaves - until the trail turns horizontal (a tee's branch, the elbow into a main at the top or bottom). Those marked pipes are rounded, and the horizontal it ends on is not.
 
 What stops or limits it, all in `Risers/RiserTrail.cs` and easy to change:
 
@@ -80,7 +80,8 @@ What stops or limits it, all in `Risers/RiserTrail.cs` and easy to change:
 - **PEX** means the pipe *type's name* contains "pex" (the same test Round Pex Lengths uses). Copper or any other pipe ends the trail.
 - **Vertical** means steeper than 45 degrees, so an offset in the riser does not break it and a flat branch is never taken for one.
 - A vertical trail must **rise at least 4 ft** (`MinRiseFeet`) to count; a shorter one is a stub into a manifold and is left at real length (reported, not rounded).
-- A manifold whose **ports are all the same size** has no inlet to tell from an outlet, so it is skipped and reported rather than guessed at.
+- A manifold whose **ports are all the same size** has no inlet to tell from an outlet, so **every port is tried** and the run says so ("inlet guessed", in the dialog and the log). Only a port whose walk reaches a real riser puts anything on a path, but an outlet that drops a long way to a fixture would pass for one - check those.
+- The **confirm dialog** has a third choice when some manifolds found no riser: select those manifolds, to see which ones the trail could not follow. `%TEMP%\BlakesTesting-RiserPex.txt` says why for each (path, other horizontals touched, riser, stub).
 - Flex pipe, fittings and valves are passed *through* by the trail and are never rounded; flex pipe gets its real length.
 
 The rounding rules (`Risers/CutLengthRules.cs`) are Round Pex Lengths' ladder, working in inches and writing feet. One difference: a length within 0.00001" above a 3" or 1' mark is forgiven (a pipe drawn at exactly 4'-3" can read back as 51.00000000000001"), where the BIM Tools ladder would take it up one more step. MFG.CutLength is written as a Length (feet) or, on a job still bound as Text, as the same number as text; a value already there is left alone.
@@ -106,7 +107,7 @@ The trail rule and the ladder have no Revit types in them and are tested without
 
     dotnet run --project tests/RiserTrailTest
 
-**Not verified in Revit.** Try it on a copy of a job with two different riser setups: `SelectRiserPex` first and Temporary Isolate the selection; then `RoundRiserPexLengths`, and check MFG.CutLength in a schedule against the pipes' own length. Things to look for: a riser pipe left out, a horizontal or a fixture stub-out picked up, a manifold reported "no usable inlet" (the port sizes), and a tower through a non-PEX section.
+**Not verified in Revit.** Try it on a copy of a job with two different riser setups: `SelectRiserPex` first and Temporary Isolate the selection; then `RoundRiserPexLengths`, and check MFG.CutLength in a schedule against the pipes' own length. Things to look for: a riser pipe left out, a horizontal or a fixture stub-out picked up, a manifold that found no riser or had its inlet guessed (the dialog and the log name them), and a tower through a non-PEX section.
 
 ## Adding a scratch command
 

@@ -11,12 +11,14 @@ namespace BlakesTesting.Risers
     // THE RULE (Blake's boss's idea): everything that gets rounded is connected to a 4- or 6-port manifold. So start
     // at each manifold and follow the pipe:
     //   1. leave by the manifold's INLET (its biggest port - the outlets are the small ones going to fixtures) and
-    //      walk the horizontal PEX - the branch to the manifold. None of it is rounded: it is distribution.
+    //      walk the horizontal PEX until a vertical is reached. The pipes ON THE WAY from the manifold to that
+    //      vertical (PathPipes) are the manifold's own branch to the riser, and they are rounded with it. Horizontal
+    //      pipe that is not on that way - a side branch off a tee, a run leaving the riser for a main - is not.
     //   2. the first VERTICAL PEX pipe reached is the riser. Follow it - through couplings, tees, valves, unions -
     //      marking every vertical PEX pipe, floor after floor, until the trail turns horizontal (a tee's branch, the
-    //      top or bottom elbow into a main): that is where it ends.
+    //      top or bottom elbow into a main): that is where it ends, and the horizontal it ends on is not rounded.
     //   3. a vertical trail shorter than MinRiseFeet is not a riser - it is a stub dropping into a manifold - so it
-    //      is left alone and reported.
+    //      is left alone and reported (and so is the path that led to it).
     // Another manifold is a wall in both walks, and so is any pipe that is not PEX.
 
     /// <summary>What a node of the pipe network is, as far as the walk cares.</summary>
@@ -66,6 +68,12 @@ namespace BlakesTesting.Risers
 
         /// <summary>What a manifold's inlet port(s) connect to - the only way a trail leaves a manifold.</summary>
         IReadOnlyList<long> InletNeighbors(long manifoldId);
+
+        /// <summary>
+        ///     True when the manifold's inlet could not be told from its outlets (every port the same size), so
+        ///     <see cref="InletNeighbors"/> gave everything the manifold is connected to rather than one port.
+        /// </summary>
+        bool InletGuessed(long manifoldId);
     }
 
     public sealed class TrailOptions
@@ -88,7 +96,7 @@ namespace BlakesTesting.Risers
         /// <summary>A riser was found; <see cref="TrailResult.RiserPipes"/> is the pipes to round.</summary>
         Found,
 
-        /// <summary>The manifold has no usable inlet: every port the same size, or the inlet is not connected.</summary>
+        /// <summary>The manifold is not connected to anything the walk can leave by.</summary>
         NoInlet,
 
         /// <summary>The walk from the inlet never reached a vertical PEX pipe.</summary>
@@ -111,8 +119,17 @@ namespace BlakesTesting.Risers
         /// <summary>The vertical PEX pipes to round.</summary>
         public List<long> RiserPipes { get; } = new List<long>();
 
-        /// <summary>The horizontal PEX pipes walked to get from the manifold to the riser - kept at real length.</summary>
+        /// <summary>
+        ///     The horizontal PEX pipes on the way from the manifold to the riser - its own branch back to the tower.
+        ///     Rounded along with the riser. Only the pipes on that way: not the side branches the walk also touched.
+        /// </summary>
+        public List<long> PathPipes { get; } = new List<long>();
+
+        /// <summary>Every horizontal PEX pipe the walk touched looking for the riser, path or not - for the log only.</summary>
         public List<long> ApproachPipes { get; } = new List<long>();
+
+        /// <summary>True when the inlet could not be told from the outlets and every port was tried (see IPipeNetwork.InletGuessed).</summary>
+        public bool InletGuessed { get; set; }
 
         /// <summary>Vertical PEX that was reached but belongs to a trail too short to be a riser.</summary>
         public List<long> StubPipes { get; } = new List<long>();
@@ -136,27 +153,32 @@ namespace BlakesTesting.Risers
             if (inlets.Count == 0) return result; // NoInlet
 
             // ---- 1. the horizontal approach: from the inlet to the first vertical PEX, however many tees it takes.
+            // Breadth first, remembering who reached each element first, so the way back from a riser to the manifold
+            // is the shortest one and can be read off afterwards.
+            result.InletGuessed = net.InletGuessed(manifoldId);
             List<long> entries = new List<long>();
+            Dictionary<long, long> cameFrom = new Dictionary<long, long>();
             HashSet<long> seen = new HashSet<long> { manifoldId };
-            Stack<long> todo = new Stack<long>();
+            Queue<long> todo = new Queue<long>();
             int visited = 0;
 
-            void Approach(long id)
+            void Approach(long id, long from)
             {
                 if (!seen.Add(id)) return;
+                cameFrom[id] = from;
                 TrailNode? node = net.Node(id);
                 if (node == null || node.Kind == NodeKind.Manifold) return;       // another manifold is a wall
                 if (node.Kind == NodeKind.Pipe)
                 {
                     if (!node.IsPex) return;                                       // the trail ends at non-PEX
                     if (node.IsVertical) { entries.Add(id); return; }              // the riser starts here
-                    result.ApproachPipes.Add(id);                                  // horizontal PEX: walked, never rounded
+                    result.ApproachPipes.Add(id);                                  // horizontal PEX the walk touched
                 }
 
-                todo.Push(id);
+                todo.Enqueue(id);
             }
 
-            foreach (long n in inlets) Approach(n);
+            foreach (long n in inlets) Approach(n, manifoldId);
             while (todo.Count > 0)
             {
                 if (++visited > options.MaxApproachNodes)
@@ -165,7 +187,8 @@ namespace BlakesTesting.Risers
                     break;
                 }
 
-                foreach (long n in net.Neighbors(todo.Pop())) Approach(n);
+                long from = todo.Dequeue();
+                foreach (long n in net.Neighbors(from)) Approach(n, from);
             }
 
             if (entries.Count == 0)
@@ -227,13 +250,30 @@ namespace BlakesTesting.Risers
                 }
             }
 
+            // ---- 3. the way back: for every entry that turned out to be part of a real riser, the PEX pipes between the
+            // manifold and it are this manifold's own branch to the tower.
+            HashSet<long> riser = new HashSet<long>(result.RiserPipes);
+            HashSet<long> onPath = new HashSet<long>();
+            foreach (long entry in entries)
+            {
+                if (!riser.Contains(entry)) continue;
+                long cur = cameFrom[entry];
+                while (cur != manifoldId && cameFrom.ContainsKey(cur))
+                {
+                    TrailNode? node = net.Node(cur);
+                    if (node != null && node.Kind == NodeKind.Pipe && onPath.Add(cur)) result.PathPipes.Add(cur);
+                    cur = cameFrom[cur];
+                }
+            }
+
             result.Status = result.RiserPipes.Count > 0 ? TrailStatus.Found : TrailStatus.TooShort;
             return result;
         }
 
         /// <summary>
-        ///     Walks from every manifold and returns every riser pipe found, once: two manifolds on the same riser
-        ///     find the same pipes. The per-manifold results come back too, for the report.
+        ///     Walks from every manifold and returns every pipe to ROUND, once: the riser pipes and each manifold's path
+        ///     back to them (two manifolds on the same riser find the same riser pipes). The per-manifold results come
+        ///     back too, for the report.
         /// </summary>
         public static HashSet<long> WalkAll(IPipeNetwork net, IEnumerable<long> manifolds, TrailOptions? options,
             List<TrailResult> results)
@@ -244,6 +284,7 @@ namespace BlakesTesting.Risers
                 TrailResult r = Walk(net, m, options);
                 results.Add(r);
                 foreach (long id in r.RiserPipes) risers.Add(id);
+                foreach (long id in r.PathPipes) risers.Add(id);
             }
 
             return risers;
@@ -255,8 +296,8 @@ namespace BlakesTesting.Risers
     {
         /// <summary>
         ///     The inlet is the biggest port (a 3/4" in, 1/2" outs). Returns the index of every port that is as big as
-        ///     the biggest, or NONE when every port is the same size - then there is nothing to tell the inlet from
-        ///     an outlet, and guessing would send the walk down a fixture stub-out. Radii in feet.
+        ///     the biggest, or NONE when every port is the same size - then there is nothing to tell the inlet from an
+        ///     outlet, and the caller decides what to do (the Revit side tries every port and says so). Radii in feet.
         /// </summary>
         public static List<int> PickInlets(IReadOnlyList<double> radii, double tolerance = 0.0005)
         {

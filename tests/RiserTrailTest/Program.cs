@@ -87,7 +87,7 @@ void Manifold(long id, params long[] inletTo)
     inlets[id] = inletTo.ToList();
     foreach (long n in inletTo) Link(id, n);
 }
-IPipeNetwork Net() => new FakeNet(nodes, links, inlets);
+FakeNet Net() => new FakeNet(nodes, links, inlets);
 
 // The picture: manifold M(1) <- flat H(2) <- elbow(3) <- vertical V1(4) <- tee(5) <- V2(6) <- elbow(7) <- flat main(8).
 // The tee's branch is a flat pipe (9) off to a second manifold. The manifold also has a vertical outlet stub (50).
@@ -100,8 +100,9 @@ Up(50, 20, 21.5); Link(1, 50); // an outlet stub: reached through the manifold, 
 var r = RiserTrail.Walk(Net(), 1);
 Check(r.Status == TrailStatus.Found, "a manifold on a riser finds it");
 Check(Same(r.RiserPipes, 4, 6), "the riser is the two vertical pipes, floor after floor, through the tee");
-Check(Same(r.ApproachPipes, 2), "the horizontal PEX to the riser is walked but not rounded");
-Check(!r.RiserPipes.Contains(8) && !r.RiserPipes.Contains(9), "the flat main at the end and the tee's branch are not rounded");
+Check(Same(r.PathPipes, 2), "the horizontal PEX from the manifold to the riser is its path, and is rounded with it");
+Check(!r.RiserPipes.Contains(8) && !r.RiserPipes.Contains(9) && !r.PathPipes.Contains(8) && !r.PathPipes.Contains(9),
+    "the flat main the riser ends on and the tee's side branch are neither riser nor path");
 Check(!r.RiserPipes.Contains(50) && !r.StubPipes.Contains(50), "the manifold's own outlet stub is never touched");
 Check(Math.Abs(r.RiseFeet - 20) < 1e-9, "the rise is the whole trail's");
 
@@ -113,7 +114,8 @@ Flat(2); Fit(3); Flat(4); Fit(5); Up(6, 0, 12); Up(7, 12, 24); Fit(8);
 Link(2, 3); Link(3, 4); Link(4, 5); Link(3, 6); Link(6, 8); Link(8, 7);
 r = RiserTrail.Walk(Net(), 1);
 Check(Same(r.RiserPipes, 6, 7), "a riser off the branch of a horizontal tee, with a coupling between its pipes");
-Check(Same(r.ApproachPipes, 2, 4), "both horizontal pipes of the approach are walked");
+Check(Same(r.ApproachPipes, 2, 4), "both horizontal pipes beyond the inlet are walked");
+Check(Same(r.PathPipes, 2), "only the pipe on the way to the riser is path: the run that carries on past the tee is a different branch");
 
 // Two manifolds on one riser: the same pipes, once.
 Reset();
@@ -123,7 +125,8 @@ Fit(32);
 Link(2, 3); Link(3, 4); Link(4, 5); Link(5, 6); Link(32, 5);
 var results = new List<TrailResult>();
 var all = RiserTrail.WalkAll(Net(), new long[] { 1, 30 }, null, results);
-Check(Same(all, 4, 6) && results.Count == 2 && results.All(x => x.Status == TrailStatus.Found), "two manifolds on one riser give its pipes once");
+Check(Same(all, 2, 4, 6, 31) && results.Count == 2 && results.All(x => x.Status == TrailStatus.Found),
+    "two manifolds on one riser: its pipes once, plus each manifold's own path");
 
 // Walls: another manifold, and anything that is not PEX.
 Reset();
@@ -156,9 +159,10 @@ Manifold(1, 2);
 Flat(2); Fit(3); Up(4, 20, 22.0); Fit(5); Flat(6);
 Link(2, 3); Link(3, 4); Link(4, 5); Link(5, 6);
 r = RiserTrail.Walk(Net(), 1);
-Check(r.Status == TrailStatus.TooShort && r.RiserPipes.Count == 0 && Same(r.StubPipes, 4), "a 2 ft vertical stub is reported and left at real length");
+Check(r.Status == TrailStatus.TooShort && r.RiserPipes.Count == 0 && Same(r.StubPipes, 4) && r.PathPipes.Count == 0,
+    "a 2 ft vertical stub is reported and left at real length, and so is the pipe that led to it");
 r = RiserTrail.Walk(Net(), 1, new TrailOptions { MinRiseFeet = 1.5 });
-Check(r.Status == TrailStatus.Found && Same(r.RiserPipes, 4), "MinRiseFeet decides it");
+Check(r.Status == TrailStatus.Found && Same(r.RiserPipes, 4) && Same(r.PathPipes, 2), "MinRiseFeet decides it");
 
 // A riser with a 45 degree offset (a sloped pipe counts as vertical).
 Reset();
@@ -177,7 +181,7 @@ Check(r.Status == TrailStatus.NoInlet, "a manifold with no usable inlet is repor
 Reset();
 Manifold(1, 2); Flat(2); Fit(3); Flat(4); Link(2, 3); Link(3, 4);
 r = RiserTrail.Walk(Net(), 1);
-Check(r.Status == TrailStatus.NoRiser && Same(r.ApproachPipes, 2, 4), "a manifold whose branch never goes vertical is NoRiser");
+Check(r.Status == TrailStatus.NoRiser && Same(r.ApproachPipes, 2, 4) && r.PathPipes.Count == 0, "a manifold whose branch never goes vertical is NoRiser, and rounds nothing");
 
 // The walk limit.
 Reset();
@@ -235,6 +239,52 @@ Check(!custom.Save(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "bt-no\0
 var clone = custom.Clone(); clone.RoundedColor = green;
 Check(custom.RoundedColor.Equals(new RgbColor(1, 2, 3)), "a clone is a copy");
 
+// The picture from the job: a manifold's horizontal runs along to a tee on the riser; past the tee a horizontal
+// leaves the riser for a main (the "square" - NOT rounded); and the manifold's branch reaches a vertical PEX pipe that is
+// not the main riser at all (the lone red vertical beside the tower) which comes up to that same kind of horizontal.
+Reset();
+Manifold(1, 2);
+Flat(2); Flat(3); Fit(4); Flat(5); Fit(6); Up(7, 0, 9.5); Fit(8); Flat(9); Fit(10); Flat(11);
+Link(2, 4); Link(3, 4); Link(4, 5); Link(5, 6); Link(6, 7); Link(7, 8); Link(8, 9); Link(9, 10); Link(10, 11);
+Link(1, 2);
+r = RiserTrail.Walk(Net(), 1);
+Check(Same(r.RiserPipes, 7) && Same(r.PathPipes, 2, 5), "the horizontal pipes back from the riser are path; the horizontal it leaves on (9, 11) is not");
+
+// A side branch at a tee on the way is not path - only the shortest way to the riser is.
+Reset();
+Manifold(1, 2);
+Flat(2); Fit(3); Flat(4); Fit(5); Up(6, 0, 10); Flat(20); Fit(21); Flat(22);
+Link(2, 3); Link(3, 4); Link(4, 5); Link(5, 6);
+Link(3, 20); Link(20, 21); Link(21, 22);
+r = RiserTrail.Walk(Net(), 1);
+Check(Same(r.PathPipes, 2, 4) && !r.PathPipes.Contains(20) && !r.PathPipes.Contains(22) && r.ApproachPipes.Contains(22),
+    "a side branch off a tee on the way is walked but never path");
+
+// Two risers off the same approach (the doubled green pipes): the path to both, once.
+Reset();
+Manifold(1, 2);
+Flat(2); Fit(3); Flat(4); Fit(5); Up(6, 0, 10); Up(7, 0, 10);
+Link(2, 3); Link(3, 4); Link(4, 5); Link(5, 6); Link(3, 7);
+r = RiserTrail.Walk(Net(), 1);
+Check(Same(r.RiserPipes, 6, 7) && Same(r.PathPipes, 2, 4), "two verticals off one approach are both risers; the path is the pipes on the way to either (2 shared, 4 on the way to 6)");
+Check(r.PathPipes.Count == r.PathPipes.Distinct().Count(), "no pipe is listed on the path twice");
+
+// A path through a non-PEX pipe is no path (the trail ends at it).
+Reset();
+Manifold(1, 2);
+Flat(2); Fit(3); Flat(4, pex: false); Fit(5); Up(6, 0, 10);
+Link(2, 3); Link(3, 4); Link(4, 5); Link(5, 6);
+r = RiserTrail.Walk(Net(), 1);
+Check(r.Status == TrailStatus.NoRiser && r.PathPipes.Count == 0, "copper between the manifold and a riser cuts the way: nothing is rounded");
+
+// The inlet-guessed flag travels through.
+Reset();
+Manifold(1, 2); Flat(2); Fit(3); Up(4, 0, 10); Link(2, 3); Link(3, 4);
+var gnet = Net(); gnet.Guessed.Add(1);
+r = RiserTrail.Walk(gnet, 1);
+Check(r.InletGuessed && r.Status == TrailStatus.Found && Same(r.PathPipes, 2), "a manifold whose inlet was guessed says so and still finds its riser");
+Check(!RiserTrail.Walk(Net(), 1).InletGuessed, "an ordinary manifold does not");
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "All checks passed." : $"{failures} check(s) FAILED.");
 return failures == 0 ? 0 : 1;
@@ -253,4 +303,6 @@ sealed class FakeNet : IPipeNetwork
     public TrailNode? Node(long id) => _nodes.TryGetValue(id, out var n) ? n : null;
     public IReadOnlyList<long> Neighbors(long id) => _links.TryGetValue(id, out var l) ? l : new List<long>();
     public IReadOnlyList<long> InletNeighbors(long manifoldId) => _inlets.TryGetValue(manifoldId, out var l) ? l : new List<long>();
+    public bool InletGuessed(long manifoldId) => Guessed.Contains(manifoldId);
+    public HashSet<long> Guessed { get; } = new HashSet<long>();
 }

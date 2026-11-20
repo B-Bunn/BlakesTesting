@@ -21,7 +21,8 @@ namespace BlakesTesting.Commands
     ///     <para>
     ///         Which PEX is a riser comes from the manifolds, not from names: from each 4- or 6-port manifold the
     ///         trail goes out through the inlet, along the horizontal PEX, up (or down) the first vertical, and every
-    ///         vertical PEX pipe on the way is a riser pipe until the trail turns horizontal again. See
+    ///         vertical PEX pipe on the way is a riser pipe until the trail turns horizontal again. The riser pipes AND
+    ///         the pipes between the manifold and the riser are rounded; a horizontal that is not on that way is not. See
     ///         <see cref="RiserTrail"/>. With nothing selected it does the whole model; with PIPES selected it writes
     ///         only those (still working out riser-or-not from the whole model); with MANIFOLDS selected it does only
     ///         the risers of those manifolds. It shows what it found and asks before it writes; one Undo.
@@ -223,6 +224,7 @@ namespace BlakesTesting.Commands
                 if (riserIds.Count > 0) uidoc.Selection.SetElementIds(riserIds);
                 TaskDialog.Show(Title, SummaryOfTrails(seeds.Count, trails, risers.Count, detailsPath)
                                        + "\n\n" + ColorReport(colors, colorProblem, colored, failed)
+                                       + NoRiserLine(trails)
                                        + (riserIds.Count > 0 ? "\n\nThe riser pipes are now selected - Temporary Isolate to check them." : ""));
                 return Result.Succeeded;
             }
@@ -239,7 +241,7 @@ namespace BlakesTesting.Commands
             StringBuilder preview = new StringBuilder();
             preview.AppendLine($"Writing {scopeText}.");
             preview.AppendLine();
-            preview.AppendLine($"Riser PEX, rounded up:  {rounded} pipe{(rounded == 1 ? "" : "s")}");
+            preview.AppendLine($"Riser PEX and its branch back to the manifold, rounded up:  {rounded} pipe{(rounded == 1 ? "" : "s")}");
             preview.AppendLine($"Everything else, real length:  {exact} pipe{(exact == 1 ? "" : "s")}");
             preview.AppendLine();
             preview.Append(SummaryOfTrails(seeds.Count, trails, risers.Count, detailsPath));
@@ -255,9 +257,15 @@ namespace BlakesTesting.Commands
                 CommonButtons = TaskDialogCommonButtons.Cancel,
             };
             confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, $"Write MFG.CutLength on {scope.Count} pipe{(scope.Count == 1 ? "" : "s")}",
-                "Riser PEX rounded up, everything else its real length. One Undo takes it back.");
+                "Riser PEX and the branch from each manifold to it rounded up, everything else its real length. One Undo takes it back.");
             confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Just select the riser pipes",
                 "Writes no cut lengths (it still colors the view if that is on). Temporary Isolate the selection to check it is the tower.");
+            List<ElementId> noRiserManifolds = trails.Where(t => t.Status != TrailStatus.Found)
+                .Select(t => LongIds.ToElementId(t.ManifoldId)).ToList();
+            if (noRiserManifolds.Count > 0)
+                confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink3,
+                    $"Select the {noRiserManifolds.Count} manifold{(noRiserManifolds.Count == 1 ? "" : "s")} that found no riser",
+                    "Writes nothing. To see which manifolds the trail could not follow, and why (the detail file says).");
             // Set only now: a default button has to exist already, and the command links were just added above.
             // The safe one is the default - nothing is written.
             confirm.DefaultButton = TaskDialogResult.CommandLink2;
@@ -277,6 +285,12 @@ namespace BlakesTesting.Commands
                 if (riserIds.Count > 0) uidoc.Selection.SetElementIds(riserIds);
                 TaskDialog.Show(Title, ColorReport(colors, colorProblem, previewColored, previewFailed)
                                        + (riserIds.Count > 0 ? "\n\nThe riser pipes are now selected." : ""));
+                return Result.Succeeded;
+            }
+
+            if (choice == TaskDialogResult.CommandLink3)
+            {
+                uidoc.Selection.SetElementIds(noRiserManifolds);
                 return Result.Succeeded;
             }
 
@@ -428,6 +442,15 @@ namespace BlakesTesting.Commands
 
         // ------------------------------------------------------------------ reporting
 
+        /// <summary>Which manifolds the trail could not follow to a riser (ids), or nothing when every one did.</summary>
+        private static string NoRiserLine(List<TrailResult> trails)
+        {
+            List<long> none = trails.Where(t => t.Status != TrailStatus.Found).Select(t => t.ManifoldId).ToList();
+            if (none.Count == 0) return "";
+            return $"\n\nNo riser found from {none.Count} manifold{(none.Count == 1 ? "" : "s")}: "
+                   + string.Join(", ", none.Take(8)) + (none.Count > 8 ? ", ..." : "") + " (the detail file says why).";
+        }
+
         /// <summary>One line for the confirm dialog: what the colouring is about to do in this view.</summary>
         private static string ColorPreview(ColorSettings c, string? problem)
         {
@@ -459,34 +482,39 @@ namespace BlakesTesting.Commands
             int tooShort = trails.Count(t => t.Status == TrailStatus.TooShort);
             int noInlet = trails.Count(t => t.Status == TrailStatus.NoInlet);
             int limit = trails.Count(t => t.HitLimit);
+            int guessed = trails.Count(t => t.InletGuessed);
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine($"Manifolds walked: {manifolds}  ->  {riserPipes} riser pipe{(riserPipes == 1 ? "" : "s")} found");
             sb.AppendLine($"  riser found from {found}");
             if (noRiser > 0) sb.AppendLine($"  NO vertical PEX reached from {noRiser}");
             if (tooShort > 0) sb.AppendLine($"  only a short vertical stub from {tooShort} (under {new TrailOptions().MinRiseFeet:0.#} ft)");
-            if (noInlet > 0) sb.AppendLine($"  NO usable inlet on {noInlet} (all ports the same size, or the inlet is unconnected)");
+            if (noInlet > 0) sb.AppendLine($"  NOTHING connected to {noInlet} (nowhere for the walk to leave by)");
+            if (guessed > 0) sb.AppendLine($"  inlet GUESSED on {guessed} (all ports the same size, so every port was tried - check these)");
             if (limit > 0) sb.AppendLine($"  horizontal walk hit its limit from {limit}");
             if (detailsPath.Length > 0) sb.Append($"\nPer-manifold detail: {detailsPath}");
             return sb.ToString().TrimEnd();
         }
 
-        /// <summary>One line per manifold - what it walked and why - to a text file, for working out why a tower came out wrong.</summary>
+        /// <summary>One block per manifold - what it walked and why - to a text file, for working out why a tower came out wrong.</summary>
         private static string WriteDetails(Document doc, List<FamilyInstance> manifolds, List<TrailResult> trails)
         {
             try
             {
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine($"Round Riser PEX Cut Lengths - {doc.Title} - {DateTime.Now:yyyy-MM-dd HH:mm}");
-                sb.AppendLine("One block per manifold. 'approach' = horizontal PEX walked to the riser (kept at real length); 'riser' = vertical PEX rounded.");
+                sb.AppendLine("One block per manifold. 'path' = the PEX between the manifold and its riser (rounded); 'riser' = vertical PEX (rounded);");
+                sb.AppendLine("'other horizontal' = horizontal PEX the walk touched that is not on that path (real length).");
                 sb.AppendLine();
                 Dictionary<long, FamilyInstance> byId = manifolds.ToDictionary(m => m.Id.ToLong());
                 foreach (TrailResult t in trails)
                 {
                     FamilyInstance m = byId[t.ManifoldId];
                     sb.AppendLine($"Manifold {t.ManifoldId}  {m.Symbol?.FamilyName} : {m.Symbol?.Name}");
-                    sb.AppendLine($"  {t.Status}{(t.HitLimit ? "  (horizontal walk hit its limit)" : "")}  rise {t.RiseFeet:0.0} ft");
-                    sb.AppendLine($"  approach {t.ApproachPipes.Count}: {string.Join(" ", t.ApproachPipes)}");
+                    sb.AppendLine($"  {t.Status}{(t.HitLimit ? "  (horizontal walk hit its limit)" : "")}{(t.InletGuessed ? "  (inlet guessed: all ports tried)" : "")}  rise {t.RiseFeet:0.0} ft");
+                    sb.AppendLine($"  path     {t.PathPipes.Count}: {string.Join(" ", t.PathPipes)}");
+                    List<long> others = t.ApproachPipes.Except(t.PathPipes).ToList();
+                    sb.AppendLine($"  other horizontal {others.Count}: {string.Join(" ", others)}");
                     sb.AppendLine($"  riser    {t.RiserPipes.Count}: {string.Join(" ", t.RiserPipes)}");
                     if (t.StubPipes.Count > 0) sb.AppendLine($"  stub (too short, left at real length) {t.StubPipes.Count}: {string.Join(" ", t.StubPipes)}");
                     sb.AppendLine();

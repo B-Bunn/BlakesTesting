@@ -40,6 +40,7 @@ namespace BlakesTesting.Risers
         private readonly double _verticalFromDegrees;
         private readonly Dictionary<long, TrailNode?> _nodes = new Dictionary<long, TrailNode?>();
         private readonly Dictionary<long, List<long>> _neighbors = new Dictionary<long, List<long>>();
+        private readonly HashSet<long> _guessed = new HashSet<long>();
 
         public RevitPipeNetwork(Document doc, double verticalFromDegrees = 45.0)
         {
@@ -78,10 +79,22 @@ namespace BlakesTesting.Risers
             if (cm == null) return list;
 
             List<Connector> ports = PipePorts(cm);
-            foreach (int i in ManifoldPorts.PickInlets(ports.Select(Radius).ToList()))
-                AddOwners(ports[i], manifoldId, list);
+            List<int> inlets = ManifoldPorts.PickInlets(ports.Select(Radius).ToList());
+            if (inlets.Count == 0)
+            {
+                // Every port the same size: nothing says which is the inlet, so try them all. That is safe for the pipes
+                // that get rounded - only a port whose walk reaches a real riser puts anything on a path - and it is
+                // said in the log and the dialog, because an outlet that drops a long way to a fixture would pass for one.
+                _guessed.Add(manifoldId);
+                foreach (Connector port in ports) AddOwners(port, manifoldId, list);
+                return list;
+            }
+
+            foreach (int i in inlets) AddOwners(ports[i], manifoldId, list);
             return list;
         }
+
+        public bool InletGuessed(long manifoldId) => _guessed.Contains(manifoldId);
 
         // ------------------------------------------------------------------ what each element is
 
