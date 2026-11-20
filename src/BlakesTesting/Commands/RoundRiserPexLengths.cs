@@ -253,12 +253,14 @@ namespace BlakesTesting.Commands
                 MainInstruction = "Write MFG.CutLength?",
                 MainContent = preview.ToString(),
                 CommonButtons = TaskDialogCommonButtons.Cancel,
-                DefaultButton = TaskDialogResult.CommandLink2, // the safe one: nothing is written
             };
             confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, $"Write MFG.CutLength on {scope.Count} pipe{(scope.Count == 1 ? "" : "s")}",
                 "Riser PEX rounded up, everything else its real length. One Undo takes it back.");
             confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Just select the riser pipes",
                 "Writes no cut lengths (it still colors the view if that is on). Temporary Isolate the selection to check it is the tower.");
+            // Set only now: a default button has to exist already, and the command links were just added above.
+            // The safe one is the default - nothing is written.
+            confirm.DefaultButton = TaskDialogResult.CommandLink2;
             TaskDialogResult choice = confirm.Show();
 
             if (choice == TaskDialogResult.CommandLink2)
