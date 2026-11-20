@@ -42,6 +42,8 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `SelectRiserPex` | The preview: finds the riser pipes and **selects** them, writing nothing - Temporary Isolate the selection to check it is the tower. Also writes a per-manifold log to `%TEMP%\BlakesTesting-RiserPex.txt`. |
 | `RoundSelectedPexAsRiser` | Manual override for a tower the trail missed: rounds the **selected** pipes up the pex ladder into MFG.CutLength, riser or not. |
 | `SetSelectedExactCutLength` | The other override: puts the **selected** pipes' real length into MFG.CutLength. |
+| `RiserPexColorSettings` | Opens the settings for the riser coloring (below): on/off, which pipes get painted, and the two colors. Saved per user in `%AppData%\BlakesTesting\RiserPexColors.ini`. |
+| `ClearRiserPexColors` | Takes the riser colors back off the pipes in the active view (the selected pipes, or all of them). Only a pipe colored one of the two settings colors is touched. |
 
 `CopyHostParametersToNested` matches parameters the way Revit does: a shared parameter by GUID, a built-in by its id, a family parameter by name *and* kind of value (a text "Size" is never forced into a numeric one). Read-only targets (e.g. already driven by the host through an association) are skipped, and so are built-ins that place or host an element (level, offsets, host, phase, workset, design option, family/type) - copying those would move the nested part. Everything else, Mark and Comments included, is copied. Type parameters are not touched. **Only nested families set to *Shared* in the family editor exist as separate elements in a project**, so a nested part that still is not picked up is not shared - open the family, select the nested family, tick *Shared*, reload. A host parameter a nested family does not have at all cannot be copied; the dialog lists those (add the parameter to that family, or bind the project/shared parameter to its category). **Not verified in Revit.**
 
@@ -84,6 +86,21 @@ What stops or limits it, all in `Risers/RiserTrail.cs` and easy to change:
 The rounding rules (`Risers/CutLengthRules.cs`) are Round Pex Lengths' ladder, working in inches and writing feet. One difference: a length within 0.00001" above a 3" or 1' mark is forgiven (a pipe drawn at exactly 4'-3" can read back as 51.00000000000001"), where the BIM Tools ladder would take it up one more step. MFG.CutLength is written as a Length (feet) or, on a job still bound as Text, as the same number as text; a value already there is left alone.
 
 The overrides write only what you select, and **running the whole-model command afterwards works every pipe out again from the manifolds**, so it overwrites them. Nothing is stored on the pipe yet: if the overrides turn out to be needed on a job, the next step is an override flag on the pipe that the whole-model run honours.
+
+### Coloring the result (testing aid)
+
+So a wrong riser is obvious at a glance, each run paints the pipes it sorted **in the active view**: the pipes it **rounded** solid **green**, the ones it **did not** solid **red**. `SelectRiserPex` paints too (rounded vs not, before anything is written); the two override commands paint what they wrote. A pipe whose cut length could not be written is not painted.
+
+It is a per-element graphic override in that one view (Override Graphics in View > By Element) - nothing in the model or the pipes' parameters changes, and one Undo takes it back. `ClearRiserPexColors` removes it later.
+
+`RiserPexColorSettings` sets:
+
+- **Color on/off** (master switch).
+- **What to color:** PEX that was rounded (the riser); PEX that was not rounded (branches, mains); every other pipe too (copper etc., off by default - it is noise when the point is to check the riser PEX). Other pipes take the not-rounded color.
+- **The two colors**, from a color picker (defaults green `#00C800` and red `#FF0000`).
+- **Color the lines too** (on by default): a surface fill does not show in a wireframe view, and pipes at coarse detail are a single line, so the projection and cut lines take the color as well.
+
+The fill is the project's solid fill pattern; if the project somehow has none, only the lines are colored. A pipe the view hides (a filter or a category switched off) cannot be overridden and is counted as "could not be colored here". A view that cannot take overrides (a sheet, schedule or legend) is not colored and the result says so. The settings logic is tested without Revit (`dotnet run --project tests/RiserTrailTest`); the painting is **not verified in Revit**.
 
 The trail rule and the ladder have no Revit types in them and are tested without Revit:
 

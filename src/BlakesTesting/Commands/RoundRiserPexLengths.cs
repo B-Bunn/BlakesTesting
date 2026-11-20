@@ -68,6 +68,77 @@ namespace BlakesTesting.Commands
             RiserCutLengths.Override(commandData, ref message, round: false);
     }
 
+    /// <summary>
+    ///     Opens the settings for the riser PEX coloring: whether to color, which pipes (rounded riser PEX, other PEX,
+    ///     every other pipe) and the colors. Saved per user in %AppData%\BlakesTesting\RiserPexColors.ini.
+    /// </summary>
+    [Transaction(TransactionMode.Manual)]
+    public class RiserPexColorSettings : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            using (RiserPexColorSettingsForm form = new RiserPexColorSettingsForm(ColorSettings.Load()))
+            {
+                if (form.ShowDialog(new RevitWindow()) != System.Windows.Forms.DialogResult.OK) return Result.Cancelled;
+                if (!form.Result().Save())
+                {
+                    message = "The settings could not be saved to " + ColorSettings.DefaultPath;
+                    return Result.Failed;
+                }
+            }
+
+            return Result.Succeeded;
+        }
+    }
+
+    /// <summary>
+    ///     Takes the riser PEX colors back off the pipes in the active view - the selected pipes, or every pipe in the
+    ///     view when none are selected. Only a pipe colored one of the two colors in the settings is touched.
+    /// </summary>
+    [Transaction(TransactionMode.Manual)]
+    public class ClearRiserPexColors : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIDocument? uidoc = commandData.Application.ActiveUIDocument;
+            if (uidoc == null)
+            {
+                message = "Open a model first.";
+                return Result.Cancelled;
+            }
+
+            Document doc = uidoc.Document;
+            View view = doc.ActiveView;
+            string? problem = ViewColoring.Problem(view);
+            if (problem != null)
+            {
+                message = "Nothing to clear: " + problem + ".";
+                return Result.Cancelled;
+            }
+
+            List<Element> pipes = uidoc.Selection.GetElementIds().Select(id => doc.GetElement(id))
+                .Where(e => e is Pipe || e is FlexPipe).ToList();
+            if (pipes.Count == 0)
+            {
+                pipes = new FilteredElementCollector(doc, view.Id).OfClass(typeof(Pipe)).ToList();
+                pipes.AddRange(new FilteredElementCollector(doc, view.Id).OfClass(typeof(FlexPipe)));
+            }
+
+            int cleared;
+            using (Transaction t = new Transaction(doc, "Clear riser PEX colors"))
+            {
+                t.Start();
+                cleared = ViewColoring.Clear(view, pipes, ColorSettings.Load());
+                t.Commit();
+            }
+
+            TaskDialog.Show("Round Riser PEX Cut Lengths",
+                $"Cleared the riser PEX colors from {cleared} pipe{(cleared == 1 ? "" : "s")} in this view. " +
+                "Only pipes colored one of the two colors in the settings are touched, and a cleared pipe loses any other override it had.");
+            return Result.Succeeded;
+        }
+    }
+
     internal enum WriteOutcome
     {
         Written,
@@ -113,15 +184,7 @@ namespace BlakesTesting.Commands
             string detailsPath = WriteDetails(doc, seeds, trails);
             ICollection<ElementId> riserIds = risers.Select(LongIds.ToElementId).ToList();
 
-            if (selectOnly)
-            {
-                if (riserIds.Count > 0) uidoc.Selection.SetElementIds(riserIds);
-                TaskDialog.Show(Title, SummaryOfTrails(seeds.Count, trails, risers.Count, detailsPath)
-                                       + (riserIds.Count > 0 ? "\n\nThe riser pipes are now selected - Temporary Isolate to check them." : ""));
-                return Result.Succeeded;
-            }
-
-            // What is written to which pipes.
+            // What is written (and coloured) on which pipes.
             List<Element> scope;
             string scopeText;
             if (pickedPipes.Count > 0)
@@ -140,6 +203,30 @@ namespace BlakesTesting.Commands
                 scopeText = "every pipe in the model";
             }
 
+            ColorSettings colors = ColorSettings.Load();
+            View view = doc.ActiveView;
+            string? colorProblem = ViewColoring.Problem(view);
+            List<KeyValuePair<Element, bool>> everyPipe =
+                scope.Select(e => new KeyValuePair<Element, bool>(e, e is Pipe && risers.Contains(e.Id.ToLong()))).ToList();
+
+            if (selectOnly)
+            {
+                int colored = 0, failed = 0;
+                if (colors.Enabled && colorProblem == null && everyPipe.Count > 0)
+                    using (Transaction t = new Transaction(doc, "Color riser PEX"))
+                    {
+                        t.Start();
+                        colored = ViewColoring.Apply(doc, view, everyPipe, colors, out failed);
+                        t.Commit();
+                    }
+
+                if (riserIds.Count > 0) uidoc.Selection.SetElementIds(riserIds);
+                TaskDialog.Show(Title, SummaryOfTrails(seeds.Count, trails, risers.Count, detailsPath)
+                                       + "\n\n" + ColorReport(colors, colorProblem, colored, failed)
+                                       + (riserIds.Count > 0 ? "\n\nThe riser pipes are now selected - Temporary Isolate to check them." : ""));
+                return Result.Succeeded;
+            }
+
             if (scope.Count == 0)
             {
                 message = "There are no pipes to write.";
@@ -156,6 +243,7 @@ namespace BlakesTesting.Commands
             preview.AppendLine($"Everything else, real length:  {exact} pipe{(exact == 1 ? "" : "s")}");
             preview.AppendLine();
             preview.Append(SummaryOfTrails(seeds.Count, trails, risers.Count, detailsPath));
+            preview.Append("\n\n" + ColorPreview(colors, colorProblem));
             if (seeds.Count == 0)
                 preview.Append("\n\nNO MANIFOLDS FOUND, so nothing counts as a riser and every pipe would be written at its real length - "
                                + "including risers that were rounded before. Cancel unless that is what you want.");
@@ -170,12 +258,23 @@ namespace BlakesTesting.Commands
             confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, $"Write MFG.CutLength on {scope.Count} pipe{(scope.Count == 1 ? "" : "s")}",
                 "Riser PEX rounded up, everything else its real length. One Undo takes it back.");
             confirm.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Just select the riser pipes",
-                "Writes nothing. Temporary Isolate the selection to check it is the tower.");
+                "Writes no cut lengths (it still colors the view if that is on). Temporary Isolate the selection to check it is the tower.");
             TaskDialogResult choice = confirm.Show();
 
             if (choice == TaskDialogResult.CommandLink2)
             {
+                int previewColored = 0, previewFailed = 0;
+                if (colors.Enabled && colorProblem == null)
+                    using (Transaction t = new Transaction(doc, "Color riser PEX"))
+                    {
+                        t.Start();
+                        previewColored = ViewColoring.Apply(doc, view, everyPipe, colors, out previewFailed);
+                        t.Commit();
+                    }
+
                 if (riserIds.Count > 0) uidoc.Selection.SetElementIds(riserIds);
+                TaskDialog.Show(Title, ColorReport(colors, colorProblem, previewColored, previewFailed)
+                                       + (riserIds.Count > 0 ? "\n\nThe riser pipes are now selected." : ""));
                 return Result.Succeeded;
             }
 
@@ -183,16 +282,24 @@ namespace BlakesTesting.Commands
 
             Tally tally = new Tally();
             bool committed;
+            int writeColored = 0, writeColorFailed = 0;
             using (Transaction t = new Transaction(doc, "Round riser PEX cut lengths"))
             {
                 t.Start();
+                // Only a pipe whose cut length is now right is painted: a green pipe whose write failed would lie.
+                List<KeyValuePair<Element, bool>> written = new List<KeyValuePair<Element, bool>>();
                 foreach (Element e in scope)
                 {
                     double length = ReadLengthFeet(e);
                     bool round = e is Pipe && risers.Contains(e.Id.ToLong());
-                    tally.Add(e, Write(e, round ? CutLengthRules.RoundPexFeet(length) : length), round);
+                    WriteOutcome outcome = Write(e, round ? CutLengthRules.RoundPexFeet(length) : length);
+                    tally.Add(e, outcome, round);
+                    if (outcome == WriteOutcome.Written || outcome == WriteOutcome.Unchanged)
+                        written.Add(new KeyValuePair<Element, bool>(e, round));
                 }
 
+                if (colors.Enabled && colorProblem == null)
+                    writeColored = ViewColoring.Apply(doc, view, written, colors, out writeColorFailed);
                 committed = t.Commit() == TransactionStatus.Committed;
             }
 
@@ -204,7 +311,8 @@ namespace BlakesTesting.Commands
             }
 
             if (riserIds.Count > 0) uidoc.Selection.SetElementIds(riserIds);
-            TaskDialog.Show(Title, tally.Report(riserIds.Count > 0 ? "The riser pipes are now selected." : ""));
+            TaskDialog.Show(Title, tally.Report(ColorReport(colors, colorProblem, writeColored, writeColorFailed)
+                                                + (riserIds.Count > 0 ? "\nThe riser pipes are now selected." : "")));
             return Result.Succeeded;
         }
 
@@ -228,17 +336,27 @@ namespace BlakesTesting.Commands
                 return Result.Cancelled;
             }
 
+            ColorSettings colors = ColorSettings.Load();
+            View view = doc.ActiveView;
+            string? colorProblem = ViewColoring.Problem(view);
             Tally tally = new Tally();
             bool committed;
+            int colored = 0, colorFailed = 0;
             using (Transaction t = new Transaction(doc, round ? "Round selected pipes as riser" : "Selected pipes at real length"))
             {
                 t.Start();
+                List<KeyValuePair<Element, bool>> written = new List<KeyValuePair<Element, bool>>();
                 foreach (Element e in pipes)
                 {
                     double length = ReadLengthFeet(e);
-                    tally.Add(e, Write(e, round ? CutLengthRules.RoundPexFeet(length) : length), round);
+                    WriteOutcome outcome = Write(e, round ? CutLengthRules.RoundPexFeet(length) : length);
+                    tally.Add(e, outcome, round);
+                    if (outcome == WriteOutcome.Written || outcome == WriteOutcome.Unchanged)
+                        written.Add(new KeyValuePair<Element, bool>(e, round));
                 }
 
+                if (colors.Enabled && colorProblem == null)
+                    colored = ViewColoring.Apply(doc, view, written, colors, out colorFailed);
                 committed = t.Commit() == TransactionStatus.Committed;
             }
 
@@ -249,7 +367,8 @@ namespace BlakesTesting.Commands
                 return Result.Failed;
             }
 
-            TaskDialog.Show(Title, tally.Report("Running Round Riser PEX Cut Lengths over the whole model works every pipe out from the "
+            TaskDialog.Show(Title, tally.Report(ColorReport(colors, colorProblem, colored, colorFailed)
+                                                + "\nRunning Round Riser PEX Cut Lengths over the whole model works every pipe out from the "
                                                 + "manifolds again, so it will overwrite this."));
             return Result.Succeeded;
         }
@@ -306,6 +425,30 @@ namespace BlakesTesting.Commands
         }
 
         // ------------------------------------------------------------------ reporting
+
+        /// <summary>One line for the confirm dialog: what the colouring is about to do in this view.</summary>
+        private static string ColorPreview(ColorSettings c, string? problem)
+        {
+            if (!c.Enabled) return "Coloring is off (Riser PEX Color Settings).";
+            if (problem != null) return $"Not colored: {problem}.";
+            List<string> parts = new List<string>();
+            if (c.ColorRounded) parts.Add($"rounded {c.RoundedColor.ToHex()}");
+            if (c.ColorOtherPex) parts.Add($"other PEX {c.NotRoundedColor.ToHex()}");
+            if (c.ColorOtherPipes) parts.Add($"other pipes {c.NotRoundedColor.ToHex()}");
+            return parts.Count == 0
+                ? "Coloring is on but nothing is ticked to color (Riser PEX Color Settings)."
+                : "Will color the pipes in this view: " + string.Join(", ", parts) + ".";
+        }
+
+        /// <summary>One line for the result dialog: what the colouring did.</summary>
+        private static string ColorReport(ColorSettings c, string? problem, int colored, int failed)
+        {
+            if (!c.Enabled) return "Coloring is off (Riser PEX Color Settings).";
+            if (problem != null) return $"Not colored: {problem}.";
+            string line = $"Colored {colored} pipe{(colored == 1 ? "" : "s")} in this view ({c.RoundedColor.ToHex()} rounded, {c.NotRoundedColor.ToHex()} not).";
+            if (failed > 0) line += $" {failed} could not be colored here (hidden in this view?).";
+            return line;
+        }
 
         private static string SummaryOfTrails(int manifolds, List<TrailResult> trails, int riserPipes, string detailsPath)
         {

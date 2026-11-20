@@ -66,4 +66,20 @@
     <VendorId>BLAKE</VendorId>
     <VendorDescription>Blake's testing</VendorDescription>
   </AddIn>
+  <AddIn Type="Command">
+    <Name>Riser PEX Color Settings</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.RiserPexColorSettings</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e009</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
+  <AddIn Type="Command">
+    <Name>Clear Riser PEX Colors</Name>
+    <Assembly>BlakesTesting.dll</Assembly>
+    <FullClassName>BlakesTesting.Commands.ClearRiserPexColors</FullClassName>
+    <ClientId>b1a4e5c2-6f0d-4a39-9c1e-3d7a52f8e00a</ClientId>
+    <VendorId>BLAKE</VendorId>
+    <VendorDescription>Blake's testing</VendorDescription>
+  </AddIn>
 </RevitAddIns>

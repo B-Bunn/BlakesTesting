@@ -14,6 +14,8 @@
     <AssemblyName>BlakesTesting</AssemblyName>
     <OutputType>Library</OutputType>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <!-- The riser PEX color settings window. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
   <PropertyGroup Condition="$(Configuration.StartsWith('Debug'))">
     <OutputPath>bin\Debug\$(RevitVersion)\</OutputPath>

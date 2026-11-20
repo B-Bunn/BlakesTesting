@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Revit-free check of the riser trail rule and the pex rounding ladder. -->
+  <!-- Revit-free check of the riser trail rule, the pex rounding ladder and the colouring settings. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -11,5 +11,6 @@
   <ItemGroup>
     <Compile Include="..\..\src\BlakesTesting\Risers\RiserTrail.cs" Link="RiserTrail.cs" />
     <Compile Include="..\..\src\BlakesTesting\Risers\CutLengthRules.cs" Link="CutLengthRules.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Risers\ColorSettings.cs" Link="ColorSettings.cs" />
   </ItemGroup>
 </Project>

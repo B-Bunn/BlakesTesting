@@ -194,6 +194,47 @@ Link(2, 3); Link(3, 4); Link(4, 5); Link(5, 6); Link(6, 7); Link(5, 6); Link(6, 
 r = RiserTrail.Walk(Net(), 1);
 Check(Same(r.RiserPipes, 4, 7), "doubly-linked fittings do not loop the walk");
 
+// ---------------------------------------------------------------------------------------------------------------
+// The colouring settings: which pipe gets which colour, and the file they live in.
+// ---------------------------------------------------------------------------------------------------------------
+var green = new RgbColor(0, 200, 0);
+var red = new RgbColor(255, 0, 0);
+var cs = new ColorSettings();
+Check(cs.Choose(true, true)?.Equals(green) == true, "default: a rounded riser pipe is green");
+Check(cs.Choose(false, true)?.Equals(red) == true, "default: PEX that was not rounded is red");
+Check(cs.Choose(false, false) == null, "default: a pipe that is not PEX is left alone");
+cs.ColorOtherPipes = true;
+Check(cs.Choose(false, false)?.Equals(red) == true, "other pipes on: they take the not-rounded colour");
+cs.ColorRounded = false;
+Check(cs.Choose(true, true) == null && cs.Choose(false, true) != null, "rounded off: only the not-rounded ones are coloured");
+cs.ColorRounded = true; cs.ColorOtherPex = false;
+Check(cs.Choose(true, true) != null && cs.Choose(false, true) == null, "other PEX off: only the rounded ones are coloured");
+cs.Enabled = false;
+Check(cs.Choose(true, true) == null && cs.Choose(false, true) == null && cs.Choose(false, false) == null, "the master switch off colours nothing");
+
+Check(RgbColor.TryParse("#00C800", out var parsed) && parsed.Equals(green) && parsed.ToHex() == "#00C800", "hex colours read and write back");
+Check(RgbColor.TryParse("ff0000", out parsed) && parsed.Equals(red), "the # is optional");
+Check(!RgbColor.TryParse("red", out _) && !RgbColor.TryParse("#12345", out _) && !RgbColor.TryParse(null, out _) && !RgbColor.TryParse("#GG0000", out _),
+    "a bad colour is refused");
+
+var custom = new ColorSettings { Enabled = false, ColorRounded = false, ColorOtherPex = false, ColorOtherPipes = true, ColorLines = false,
+    RoundedColor = new RgbColor(1, 2, 3), NotRoundedColor = new RgbColor(250, 251, 252) };
+var back = ColorSettings.Parse(custom.ToText());
+Check(!back.Enabled && !back.ColorRounded && !back.ColorOtherPex && back.ColorOtherPipes && !back.ColorLines
+      && back.RoundedColor.Equals(new RgbColor(1, 2, 3)) && back.NotRoundedColor.Equals(new RgbColor(250, 251, 252)), "settings survive a round trip through their text");
+var junk = ColorSettings.Parse("Enabled=maybe\nRoundedColor=nope\nwhat\n=x\n# comment\nColorLines=False\nUnknown=1\r\nNotRoundedColor=#0000FF\r\n");
+Check(junk.Enabled && junk.RoundedColor.Equals(green) && !junk.ColorLines && junk.NotRoundedColor.Equals(new RgbColor(0, 0, 255)),
+    "bad or unknown lines are ignored and keep their defaults; good ones (CRLF too) are read");
+Check(ColorSettings.Parse(null).Enabled && ColorSettings.Parse("").RoundedColor.Equals(green), "no text gives the defaults");
+
+string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "bt-colors-" + Guid.NewGuid().ToString("N"), "sub", "c.ini");
+Check(!System.IO.File.Exists(tmp) && ColorSettings.Load(tmp).Enabled, "no file: the defaults");
+Check(custom.Save(tmp) && ColorSettings.Load(tmp).ColorOtherPipes && ColorSettings.Load(tmp).RoundedColor.Equals(new RgbColor(1, 2, 3)), "saved to a new folder and loaded back");
+System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(System.IO.Path.GetDirectoryName(tmp))!, true);
+Check(!custom.Save(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "bt-no\0pe", "x.ini")), "an unwritable path reports false instead of throwing");
+var clone = custom.Clone(); clone.RoundedColor = green;
+Check(custom.RoundedColor.Equals(new RgbColor(1, 2, 3)), "a clone is a copy");
+
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "All checks passed." : $"{failures} check(s) FAILED.");
 return failures == 0 ? 0 : 1;
