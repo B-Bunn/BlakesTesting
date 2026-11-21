@@ -26,6 +26,10 @@ internal static class Program
     private static void Same(string actual, string expected, string what) =>
         Check(actual == expected, what + " (expected '" + expected + "', got '" + actual + "')");
 
+    // The settings the first version of these checks used: colours change at 4, 8 and 12 feet.
+    private static TrenchMapSettings Classic(double offset = 0, double below = 0) =>
+        new TrenchMapSettings { FloorOffset = offset, BelowPipe = below, LevelName = "L", DepthMarks = new List<double> { 4, 8, 12 } }.Normalize();
+
     private static int Main()
     {
         LengthText();
@@ -79,7 +83,7 @@ internal static class Program
     // ---------------------------------------------------------------- settings rules
     private static void SettingsRules()
     {
-        TrenchMapSettings s = new TrenchMapSettings();
+        TrenchMapSettings s = Classic();
         Near(s.WidthFor(0.5), 1.5, "shallow trench is 18 in");
         Near(s.WidthFor(3.99), 1.5, "just under 4 ft is 18 in");
         Near(s.WidthFor(4.0), 2.0, "exactly 4 ft is 24 in");
@@ -98,11 +102,12 @@ internal static class Program
         Same(none.BandText(0), "any depth", "one band's text");
 
         Check(s.Widths().SequenceEqual(new[] { 1.5, 2.0 }), "the default widths");
+        DefaultMarksEverySixInches();
         Near(s.MetricShift, 0, "spoils depth has no shift");
         TrenchMapSettings bop = new TrenchMapSettings { ColorBy = TrenchColorBy.BottomOfPipe, FloorOffset = 0.5, BelowPipe = 0.25 };
         Near(bop.MetricShift, 0.25, "bottom of pipe shifts by offset less dig below");
 
-        Check(new TrenchMapSettings().WhatIsMissing() != null, "a fresh settings object asks for the offset and level");
+        Check(Classic().WhatIsMissing() == null || new TrenchMapSettings().WhatIsMissing() != null, "a fresh settings object asks for the offset and level");
         Check(new TrenchMapSettings { FloorOffset = 0.5, LevelName = "Level 1" }.WhatIsMissing() == null, "offset and level are enough");
         Check(new TrenchMapSettings { FloorOffset = 0.5, Source = TrenchFloorSource.Floors, FloorParameter = "Comments" }.WhatIsMissing() != null,
             "floors need the value too");
@@ -176,15 +181,15 @@ internal static class Program
 
         TrenchMapSettings garbage = TrenchMapSettings.Parse("nonsense\nFloorOffset=abc\nSource=Sideways\nWidthBands=x:y\nDepthMarks=q\nTransparency=lots\n");
         Check(garbage.FloorOffset == null && garbage.Source == TrenchFloorSource.Level, "garbage keeps the defaults");
-        Check(garbage.WidthBands.Count == 1 && garbage.DepthMarks.Count == 3, "unreadable rows and marks keep the defaults");
-        Check(TrenchMapSettings.Parse(null).DepthMarks.Count == 3, "null text is the defaults");
+        Check(garbage.WidthBands.Count == 1 && garbage.DepthMarks.Count == 24, "unreadable rows and marks keep the defaults");
+        Check(TrenchMapSettings.Parse(null).DepthMarks.Count == 24, "null text is the defaults");
 
         string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "trenchmap-test-" + Guid.NewGuid().ToString("N") + ".ini");
         try
         {
             Check(s.Save(path), "saves");
             Check(TrenchMapSettings.Load(path).DeeperWidth == 2.5, "loads what was saved");
-            Check(TrenchMapSettings.Load(path + ".missing").DepthMarks.Count == 3, "a missing file is the defaults");
+            Check(TrenchMapSettings.Load(path + ".missing").DepthMarks.Count == 24, "a missing file is the defaults");
         }
         finally
         {
@@ -224,7 +229,7 @@ internal static class Program
 
     private static void PlanLevelRun()
     {
-        TrenchMapSettings s = new TrenchMapSettings { FloorOffset = 0, LevelName = "L" }.Normalize();
+        TrenchMapSettings s = Classic();
         TrenchPlanResult r = TrenchRules.Plan(new[] { Run(1, 0, 0, -5, 10, 0, -5) }, s, Floor(0));
         Check(r.Pieces.Count == 1 && r.RunsWithTrench == 1, "a level run is one box");
         TrenchPiece p = r.Pieces[0];
@@ -245,7 +250,7 @@ internal static class Program
 
     private static void PlanSlopedRun()
     {
-        TrenchMapSettings s = new TrenchMapSettings { FloorOffset = 0, LevelName = "L" }.Normalize();
+        TrenchMapSettings s = Classic();
         // 12 ft run falling from 3 ft to 9 ft deep: 18 in under 4 ft, then 24 in; bands <4, 4-8, 8-12 cross at 2 ft and 10 ft.
         TrenchPlanResult r = TrenchRules.Plan(new[] { Run(7, 0, 0, -3, 12, 0, -9) }, s, Floor(0));
         Check(r.Pieces.Count == 3, "three boxes where the depth crosses 4 ft and 8 ft (got " + r.Pieces.Count + ")");
@@ -270,7 +275,7 @@ internal static class Program
     private static void PlanBottomOfPipe()
     {
         // Floor offset 6 in and 3 in of bedding: the floor-to-bottom-of-pipe depth is the spoils depth plus 3 in.
-        TrenchMapSettings spoils = new TrenchMapSettings { FloorOffset = 0.5, BelowPipe = 0.25, LevelName = "L" }.Normalize();
+        TrenchMapSettings spoils = Classic(0.5, 0.25);
         TrenchMapSettings bop = spoils.Clone();
         bop.ColorBy = TrenchColorBy.BottomOfPipe;
 
@@ -299,7 +304,7 @@ internal static class Program
 
     private static void PlanGaps()
     {
-        TrenchMapSettings s = new TrenchMapSettings { FloorOffset = 0, LevelName = "L" }.Normalize();
+        TrenchMapSettings s = Classic();
         TrenchPlanResult none = TrenchRules.Plan(new[] { Run(1, 0, 0, -5, 10, 0, -5) }, s, (x, y, z) => null);
         Check(none.Pieces.Count == 0 && none.RunsWithTrench == 0, "no floor: nothing drawn");
         Near(none.LengthNoFloor, 10, "and the length is counted");
@@ -320,7 +325,7 @@ internal static class Program
 
     private static void PlanJoins()
     {
-        TrenchMapSettings s = new TrenchMapSettings { FloorOffset = 0, LevelName = "L" }.Normalize();
+        TrenchMapSettings s = Classic();
         // An L: two runs meeting at a corner each stretch past the corner by half their width, covering it square.
         TrenchPlanResult r = TrenchRules.Plan(new[] { Run(1, 0, 0, -5, 10, 0, -5), Run(2, 10, 0, -5, 10, 10, -5) }, s, Floor(0));
         Check(r.Pieces.Count == 2, "two runs, two boxes");
@@ -331,7 +336,7 @@ internal static class Program
     // ---------------------------------------------------------------- the legend
     private static void Legend()
     {
-        TrenchMapSettings s = new TrenchMapSettings { FloorOffset = 0, LevelName = "L" }.Normalize();
+        TrenchMapSettings s = Classic();
         TrenchPlanResult r = TrenchRules.Plan(new[] { Run(7, 0, 0, -3, 12, 0, -9), Run(8, 0, 20, -5, 10, 20, -5) }, s, Floor(0));
         List<TrenchLegendRow> rows = TrenchLegend.Rows(s, r.Pieces, f => TrenchText.Feet(f) + " LF");
 
@@ -355,12 +360,9 @@ internal static class Program
         RgbColor alone = TrenchLegend.Rows(s, onlyDeep.Pieces, f => "")[0].Color;
         Check(alone.Equals(rows.First(x => x.Class.Equals(new TrenchClass(2, 1))).Color), "a combination keeps its colour from run to run");
 
-        // Every combination the default settings can give is a different colour.
-        List<RgbColor> all = new List<RgbColor>();
-        foreach (double w in s.Widths())
-            for (int b = 0; b < s.DepthBandCount; b++)
-                all.Add(TrenchLegend.ColorOf(s, new TrenchClass(w, b)));
-        Check(all.Distinct().Count() == all.Count && all.Count == 8, "the 8 default combinations are 8 colours");
+        // Every combination the settings can give is a different colour.
+        List<RgbColor> all = s.ReachableClasses().Select(c => TrenchLegend.ColorOf(s, c)).ToList();
+        Check(all.Distinct().Count() == all.Count && all.Count == 4, "the 4 combinations of 4/8/12 ft marks are 4 colours (got " + all.Count + ")");
 
         // And a big rule still gives distinct colours.
         List<RgbColor> many = Enumerable.Range(0, 30).Select(i => TrenchLegend.ColorAt(i, 30)).ToList();
@@ -371,5 +373,45 @@ internal static class Program
         TrenchMapSettings b2 = s.Clone();
         b2.ColorBy = TrenchColorBy.BottomOfPipe;
         Check(TrenchLegend.Heading(b2).Title.Contains("BOTTOM OF PIPE"), "bottom of pipe heading");
+    }
+
+    // ---------------------------------------------------------------- the 6 inch default
+    private static void DefaultMarksEverySixInches()
+    {
+        TrenchMapSettings d = new TrenchMapSettings();
+        Check(d.DepthMarks.Count == 24 && Math.Abs(d.DepthMarks[0] - 0.5) < 1e-9 && Math.Abs(d.DepthMarks[23] - 12) < 1e-9, "default marks: 6\" to 12'-0\", 24 of them");
+        Check(d.DepthMarks.Zip(d.DepthMarks.Skip(1), (a, b) => b - a).All(g => Math.Abs(g - 0.5) < 1e-9), "every 6\" apart");
+        Check(d.DepthBandCount == 25, "25 bands");
+        Check(d.BandOf(0.49) == 0 && d.BandOf(0.5) == 1 && d.BandOf(5.25) == 10 && d.BandOf(30) == 24, "a colour change every 6\"");
+        Same(d.BandText(0), "0'-0\" to 0'-6\"", "first band text");
+        Same(d.BandText(10), "5'-0\" to 5'-6\"", "a middle band text");
+        Same(d.BandText(24), "12'-0\" and deeper", "last band text");
+
+        Check(TrenchMapSettings.MarksEvery(0.5, 2).SequenceEqual(new[] { 0.5, 1.0, 1.5, 2.0 }), "marks every step to the limit");
+        Check(TrenchMapSettings.MarksEvery(1, 3).SequenceEqual(new[] { 1.0, 2.0, 3.0 }), "marks every foot");
+        Check(TrenchMapSettings.MarksEvery(0, 3).Count == 0 && TrenchMapSettings.MarksEvery(1, -1).Count == 0, "no marks for a bad step or limit");
+        Check(TrenchMapSettings.MarksEvery(0.01, 12).Count == 0, "no more than " + TrenchMapSettings.MaxMarks + " marks");
+
+        // Width follows the spoils depth: 18" under 4 ft is bands 0-7, 24" is the rest, so 25 combinations.
+        List<TrenchClass> reach = d.ReachableClasses();
+        Check(reach.Count == 25 && reach.Take(8).All(c => c.Width == 1.5) && reach.Skip(8).All(c => c.Width == 2.0), "25 reachable combinations, 18 in under 4 ft");
+        Check(reach.Select(c => TrenchLegend.ColorOf(d, c)).Distinct().Count() == 25, "25 different colours");
+
+        // A band that holds a width change gives both widths.
+        TrenchMapSettings straddle = new TrenchMapSettings { DepthMarks = new List<double> { 3, 6 } }.Normalize();
+        Check(straddle.ReachableClasses().Count(c => c.DepthBand == 1) == 2, "a band across the 4 ft width change has both widths");
+        // The bottom-of-pipe shift moves which bands exist: 6 in offset puts nothing in the bands under 6 in of spoils depth.
+        TrenchMapSettings shifted = new TrenchMapSettings { ColorBy = TrenchColorBy.BottomOfPipe, FloorOffset = 1.0, DepthMarks = new List<double> { 0.5, 1, 2 } }.Normalize();
+        Check(shifted.ReachableClasses().All(c => c.DepthBand >= 2), "bands the spoils depth cannot reach are left out");
+
+        // A level run 5'-3" deep is band 10 under the default; a slope from 3 to 9 ft crosses every 6" mark.
+        TrenchMapSettings level = new TrenchMapSettings { FloorOffset = 0, LevelName = "L" }.Normalize();
+        TrenchPlanResult flat = TrenchRules.Plan(new[] { Run(1, 0, 0, -5.25, 10, 0, -5.25) }, level, Floor(0));
+        Check(flat.Pieces.Count == 1 && flat.Pieces[0].Class.Equals(new TrenchClass(2, 10)), "5'-3\" deep: 24 in, band 10");
+        TrenchPlanResult slope = TrenchRules.Plan(new[] { Run(2, 0, 0, -3, 24, 0, -9) }, level, Floor(0));
+        Check(slope.Pieces.Count == 12, "3 ft to 9 ft crosses 11 marks: 12 boxes (got " + slope.Pieces.Count + ")");
+        Check(slope.Pieces.Select(p => p.Class.DepthBand).Distinct().Count() == 12, "each its own colour");
+        List<TrenchLegendRow> rows = TrenchLegend.Rows(level, slope.Pieces, f => TrenchText.Feet(f));
+        Check(rows.Count == 12 && rows.Select(r => r.Color).Distinct().Count() == 12, "one legend row a colour");
     }
 }

@@ -133,7 +133,8 @@ volume count and its sluff (the map draws the bottom width):
 - Drawn as **filled regions** (detail items: this view only) of filled region types named `Trench Map W18 D0`, one per combination, in the
   solid fill and the combination's color, **see-through** (30% by default, so the pipes and the plan show through) and with invisible
   outlines; the **legend** is the same regions as swatches beside text notes of the types `Trench Map Legend` / `Trench Map Legend Title`,
-  to the right of the trench, sized from the view's scale. Everything is found again by those type names, so **Clear Trench Map** (and the
+  to the right of the trench, sized from the view's scale, broken out one row per width and depth band under a heading for each width with its
+  total. If the view is cropped the crop region is widened to take the legend in (Undo puts it back) and the legend is left selected. Everything is found again by those type names, so **Clear Trench Map** (and the
   next run) removes exactly the map and never a filled region you drew. One transaction: one Undo. The unused types stay in the project.
 
 The rules have no Revit types in them and are tested without Revit:

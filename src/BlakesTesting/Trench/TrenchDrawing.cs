@@ -27,6 +27,15 @@ namespace BlakesTesting.Trench
 
         public List<TrenchLegendRow> Legend { get; set; } = new List<TrenchLegendRow>();
 
+        /// <summary>The legend's swatches and text notes, so the run can select them and the person can see where they are.</summary>
+        public List<ElementId> LegendIds { get; } = new List<ElementId>();
+
+        /// <summary>True when the view's crop region was widened to take in the legend.</summary>
+        public bool CropWidened { get; set; }
+
+        /// <summary>True when the legend lies outside a crop region that could not be widened.</summary>
+        public bool LegendOutsideCrop { get; set; }
+
         /// <summary>Whether the transparency could be set on the drawn regions.</summary>
         public bool TransparencyApplied { get; set; }
     }
@@ -45,6 +54,7 @@ namespace BlakesTesting.Trench
         internal const string TextTypePrefix = "Trench Map Legend";
         private const string BodyTextType = TextTypePrefix;
         private const string TitleTextType = TextTypePrefix + " Title";
+        private const string GroupTextType = TextTypePrefix + " Group";
 
         /// <summary>Body and title text sizes on paper (feet): 3/32" and 1/8".</summary>
         private const double BodyPaperSize = 3.0 / 32.0 / 12.0;
@@ -286,6 +296,7 @@ namespace BlakesTesting.Trench
         {
             ElementId bodyType = TextType(doc, BodyTextType, BodyPaperSize, bold: false);
             ElementId titleType = TextType(doc, TitleTextType, TitlePaperSize, bold: true);
+            ElementId groupType = TextType(doc, GroupTextType, BodyPaperSize, bold: true);
 
             // Sizes are on paper; the view's scale makes them the model feet they take up on the plan.
             double scale = Math.Max(1, view.Scale);
@@ -305,13 +316,26 @@ namespace BlakesTesting.Trench
             double swatchW = 5 * body, swatchH = 1.5 * body, rowH = 2.6 * body;
 
             (string heading, string subtitle) = TrenchLegend.Heading(settings);
-            Note(doc, view, titleType, x0, y, z, heading);
+            result.LegendIds.Add(Note(doc, view, titleType, x0, y, z, heading));
             y -= title * 1.7;
-            Note(doc, view, bodyType, x0, y, z, subtitle);
+            result.LegendIds.Add(Note(doc, view, bodyType, x0, y, z, subtitle));
             y -= body * 2.6;
 
+            double? group = null;
             foreach (TrenchLegendRow row in result.Legend)
             {
+                // A heading each time the width changes, with that width's total, so a long legend reads in sections.
+                if (group == null || Math.Abs(group.Value - row.Class.Width) > 1e-6)
+                {
+                    group = row.Class.Width;
+                    double widthTotal = result.Legend.Where(r => Math.Abs(r.Class.Width - group.Value) < 1e-6).Sum(r => r.Length);
+                    string head = TrenchText.Width(group.Value) + " WIDE TRENCH";
+                    if (settings.LegendFootage) head += " - " + TrenchText.Feet(widthTotal) + " total";
+                    if (result.LegendIds.Count > 2) y -= body * 0.8;
+                    result.LegendIds.Add(Note(doc, view, groupType, x0, y, z, head));
+                    y -= body * 2.2;
+                }
+
                 double top = y + 0.15 * body;
                 (double X, double Y)[] swatch =
                 {
@@ -320,6 +344,7 @@ namespace BlakesTesting.Trench
                 try
                 {
                     FilledRegion region = CreateRegion(doc, view, types[row.Class], swatch, plane);
+                    result.LegendIds.Add(region.Id);
                     if (see != null)
                     {
                         try
@@ -337,23 +362,69 @@ namespace BlakesTesting.Trench
                     if (result.FirstProblem == null) result.FirstProblem = ex.Message;
                 }
 
-                Note(doc, view, bodyType, x0 + swatchW + body, y, z, row.Text);
+                result.LegendIds.Add(Note(doc, view, bodyType, x0 + swatchW + body, y, z, row.Text));
                 y -= rowH;
             }
 
             string total = "Total trench: " + TrenchText.Feet(plan.TrenchLength);
             if (noFloorLength > 0.01) total += "\nNot shown (no floor over it): " + TrenchText.Feet(noFloorLength);
-            Note(doc, view, bodyType, x0, y - body * 0.4, z, total);
+            result.LegendIds.Add(Note(doc, view, bodyType, x0, y - body * 0.4, z, total));
+
+            KeepLegendInView(doc, view, result, body);
         }
 
-        private static void Note(Document doc, View view, ElementId typeId, double x, double y, double z, string text)
+        /// <summary>
+        ///     A cropped view shows nothing outside its crop region, and the legend sits to the side of the trench - often
+        ///     outside it. So the crop region is widened to take in the legend (and a margin of a few text heights), which
+        ///     Undo takes back with the rest. A crop that Revit would not change is said in the result.
+        /// </summary>
+        private static void KeepLegendInView(Document doc, View view, TrenchDrawResult result, double body)
+        {
+            if (!view.CropBoxActive) return;
+
+            try
+            {
+                doc.Regenerate();
+                BoundingBoxXYZ crop = view.CropBox;
+                Transform toView = crop.Transform.Inverse;
+                double minX = crop.Min.X, minY = crop.Min.Y, maxX = crop.Max.X, maxY = crop.Max.Y;
+                double margin = 2 * body;
+                bool widen = false;
+                foreach (ElementId id in result.LegendIds)
+                {
+                    BoundingBoxXYZ? box = doc.GetElement(id)?.get_BoundingBox(view);
+                    if (box == null) continue;
+                    foreach (double x in new[] { box.Min.X, box.Max.X })
+                        foreach (double y in new[] { box.Min.Y, box.Max.Y })
+                        {
+                            XYZ local = toView.OfPoint(new XYZ(x, y, box.Min.Z));
+                            if (local.X < minX) { minX = local.X - margin; widen = true; }
+                            if (local.X > maxX) { maxX = local.X + margin; widen = true; }
+                            if (local.Y < minY) { minY = local.Y - margin; widen = true; }
+                            if (local.Y > maxY) { maxY = local.Y + margin; widen = true; }
+                        }
+                }
+
+                if (!widen) return;
+                crop.Min = new XYZ(minX, minY, crop.Min.Z);
+                crop.Max = new XYZ(maxX, maxY, crop.Max.Z);
+                view.CropBox = crop;
+                result.CropWidened = true;
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException)
+            {
+                result.LegendOutsideCrop = true;
+            }
+        }
+
+        private static ElementId Note(Document doc, View view, ElementId typeId, double x, double y, double z, string text)
         {
             TextNoteOptions options = new TextNoteOptions(typeId)
             {
                 HorizontalAlignment = HorizontalTextAlignment.Left,
                 VerticalAlignment = VerticalTextAlignment.Top,
             };
-            TextNote.Create(doc, view.Id, new XYZ(x, y, z), text, options);
+            return TextNote.Create(doc, view.Id, new XYZ(x, y, z), text, options).Id;
         }
     }
 }

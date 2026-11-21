@@ -100,6 +100,16 @@ namespace BlakesTesting.Commands
                 return Result.Failed;
             }
 
+            // Select the legend, so it is plain where it is whatever the zoom.
+            try
+            {
+                if (drawn.LegendIds.Count > 0) uidoc.Selection.SetElementIds(drawn.LegendIds);
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException)
+            {
+                // Only a courtesy.
+            }
+
             TaskDialog.Show(Title, Report(settings, scope, drawn, view));
             return Result.Succeeded;
         }
@@ -115,7 +125,9 @@ namespace BlakesTesting.Commands
             sb.AppendLine();
             foreach (TrenchLegendRow row in drawn.Legend) sb.AppendLine("  " + row.Text);
             sb.AppendLine();
-            sb.AppendLine("The legend is to the right of the trench; if it is out of sight, widen the view's crop region.");
+            sb.AppendLine("The legend is to the right of the trench, and is left selected so you can see it.");
+            if (drawn.CropWidened) sb.AppendLine("The view's crop region was widened to take in the legend (Undo puts it back).");
+            if (drawn.LegendOutsideCrop) sb.AppendLine("The legend is outside this view's crop region and Revit would not widen it: widen the crop region by hand.");
 
             string left = Left(scope);
             if (left.Length > 0) sb.AppendLine(left);

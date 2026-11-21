@@ -410,24 +410,32 @@ namespace BlakesTesting.Trench
             new RgbColor(188, 189, 34), new RgbColor(23, 190, 207), new RgbColor(255, 215, 0), new RgbColor(0, 128, 128),
         };
 
-        /// <summary>The colour of colour number <paramref name="index"/>: a fixed table of twelve for a few combinations, then evenly spaced hues for more.</summary>
+        /// <summary>
+        ///     The colour of colour number <paramref name="index"/> of <paramref name="total"/>: a fixed table of twelve
+        ///     for a few combinations; for more, a ramp from blue (shallow) through green and yellow to red (deep) in the
+        ///     order the combinations are numbered, every other one a shade lighter so neighbours stay apart.
+        /// </summary>
         public static RgbColor ColorAt(int index, int total)
         {
             if (index < 0) index = 0;
             if (total <= Palette.Length) return Palette[index % Palette.Length];
-            double hue = (index * 137.50776405) % 360.0;
-            double light = index % 2 == 0 ? 0.45 : 0.6;
-            return FromHsl(hue, 0.7, light);
+            double t = total > 1 ? Math.Min(index, total - 1) / (double)(total - 1) : 0;
+            return FromHsl(240.0 * (1 - t), 0.85, index % 2 == 0 ? 0.42 : 0.58);
         }
 
-        /// <summary>The colour a class is drawn in: its place among every width and depth-band combination the settings can give.</summary>
+        /// <summary>The colour a class is drawn in: its place in <see cref="TrenchMapSettings.ReachableClasses"/>.</summary>
         public static RgbColor ColorOf(TrenchMapSettings settings, TrenchClass c)
         {
-            List<double> widths = settings.Widths();
-            int w = widths.FindIndex(x => Math.Abs(x - c.Width) < 1e-6);
-            if (w < 0) w = 0;
-            int bands = settings.DepthBandCount;
-            return ColorAt(w * bands + Math.Min(Math.Max(c.DepthBand, 0), bands - 1), widths.Count * bands);
+            List<TrenchClass> all = settings.ReachableClasses();
+            int index = all.FindIndex(x => x.Equals(c));
+            if (index < 0)
+            {
+                // A combination the rule cannot give (a hand-built class): next to the others of its band.
+                index = all.FindLastIndex(x => x.DepthBand <= c.DepthBand);
+                if (index < 0) index = 0;
+            }
+
+            return ColorAt(index, Math.Max(1, all.Count));
         }
 
         /// <summary>

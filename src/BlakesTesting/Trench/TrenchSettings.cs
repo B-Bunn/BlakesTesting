@@ -81,9 +81,34 @@ namespace BlakesTesting.Trench
 
         /// <summary>
         ///     The depths the colours change at, feet, ascending: 4, 8, 12 makes bands under 4', 4' to 8', 8' to 12' and
-        ///     12' and deeper. No marks is one band.
+        ///     12' and deeper. No marks is one band. Every 6" down to 12'-0" by default (<see cref="DefaultMarks"/>).
         /// </summary>
-        public List<double> DepthMarks { get; set; } = new List<double> { 4, 8, 12 };
+        public List<double> DepthMarks { get; set; } = DefaultMarks();
+
+        /// <summary>6": how often the default colours change (the owner's ask of 2026-11-21).</summary>
+        public const double DefaultMarkStep = 0.5;
+
+        /// <summary>12'-0": the depth the default colours stop changing at - past it is one last band.</summary>
+        public const double DefaultMarkLimit = 12.0;
+
+        /// <summary>The most marks <see cref="MarksEvery"/> makes: a colour a step is unreadable past this.</summary>
+        public const int MaxMarks = 60;
+
+        /// <summary>The default depth marks: 6", 1'-0", 1'-6" ... down to 12'-0".</summary>
+        public static List<double> DefaultMarks() => MarksEvery(DefaultMarkStep, DefaultMarkLimit);
+
+        /// <summary>
+        ///     Marks every <paramref name="step"/> feet from the first step up to and including <paramref name="limit"/>:
+        ///     0.5 and 12 make 6", 12" ... 12'-0" (24 marks, so 25 bands). Empty for a step or limit that is not a positive
+        ///     length, or one that would make more than <see cref="MaxMarks"/>.
+        /// </summary>
+        public static List<double> MarksEvery(double step, double limit)
+        {
+            List<double> marks = new List<double>();
+            if (!IsPositive(step) || !IsPositive(limit) || limit / step > MaxMarks + 0.001) return marks;
+            for (int i = 1; i * step <= limit + 1e-9; i++) marks.Add(Math.Round(i * step, 9));
+            return marks;
+        }
 
         /// <summary>How see-through the trench colours are, per cent (0 solid), so the pipes and floor plan show through.</summary>
         public int Transparency { get; set; } = 30;
@@ -185,6 +210,32 @@ namespace BlakesTesting.Trench
         /// <summary>The widths the rule can give, narrowest first.</summary>
         public List<double> Widths() =>
             WidthBands.Select(b => Math.Round(b.Width, 6)).Append(Math.Round(DeeperWidth, 6)).Distinct().OrderBy(w => w).ToList();
+
+        /// <summary>
+        ///     Every width and depth-band combination a trench can actually be, band by band from the shallowest and
+        ///     narrowest first: a band takes the widths the rule gives at the depths it covers (usually one; two where a
+        ///     width change falls inside it). Bands no positive depth reaches are left out. This is the table the colours
+        ///     are numbered by, so a combination is the same colour from one run to the next.
+        /// </summary>
+        public List<TrenchClass> ReachableClasses()
+        {
+            double shift = MetricShift;
+            List<TrenchClass> classes = new List<TrenchClass>();
+            for (int band = 0; band < DepthBandCount; band++)
+            {
+                double lo = band == 0 ? double.NegativeInfinity : DepthMarks[band - 1] - shift;
+                double hi = band >= DepthMarks.Count ? double.PositiveInfinity : DepthMarks[band] - shift;
+                if (hi <= 0) continue;
+
+                double start = Math.Max(lo, 0) + 1e-9;
+                List<double> probes = new List<double> { start };
+                probes.AddRange(WidthBands.Select(b => b.ShallowerThan).Where(d => d > start && d < hi));
+                foreach (double width in probes.Select(WidthFor).Select(w => Math.Round(w, 6)).Distinct().OrderBy(w => w))
+                    classes.Add(new TrenchClass(width, band));
+            }
+
+            return classes;
+        }
 
         /// <summary>The depth range of a band as the legend says it: "0'-0" to 4'-0"", "4'-0" to 8'-0"", "12'-0" and deeper".</summary>
         public string BandText(int band)

@@ -29,6 +29,8 @@ namespace BlakesTesting.Commands
         private readonly DataGridView _bands = new DataGridView();
         private readonly TextBox _deeper = new TextBox();
         private readonly TextBox _marks = new TextBox();
+        private readonly TextBox _step = new TextBox();
+        private readonly TextBox _limit = new TextBox();
         private readonly NumericUpDown _transparency = new NumericUpDown();
         private readonly CheckBox _footage = new CheckBox();
         private TrenchMapSettings _result;
@@ -45,7 +47,7 @@ namespace BlakesTesting.Commands
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(580, 700);
+            ClientSize = new Size(580, 756);
 
             int y = 12;
             if (!string.IsNullOrEmpty(banner))
@@ -113,13 +115,25 @@ namespace BlakesTesting.Commands
             Header("The colors", ref y);
             Controls.Add(new Label
             {
-                Text = "Each width and depth band is its own color. The colors change at these depths (comma between), e.g. 4'-0\", 8'-0\", 12'-0\". "
-                       + "Blank is one band.",
+                Text = "Each width and depth band is its own color, changing at the depths below (comma between). "
+                       + "Blank is one band. By default the color changes every 6\" down to 12'-0\".",
                 Left = 32, Top = y, Width = 520, Height = 32, ForeColor = SystemColors.GrayText,
             });
             y += 34;
-            _marks.SetBounds(32, y, 520, 24);
+            _marks.SetBounds(32, y, 520, 48);
+            _marks.Multiline = true;
+            _marks.ScrollBars = ScrollBars.Vertical;
             Controls.Add(_marks);
+            y += 54;
+            Controls.Add(new Label { Text = "Or fill one every:", Left = 32, Top = y + 3, Width = 110 });
+            _step.SetBounds(146, y, 80, 24);
+            Controls.Add(_step);
+            Controls.Add(new Label { Text = "down to:", Left = 236, Top = y + 3, Width = 64 });
+            _limit.SetBounds(302, y, 80, 24);
+            Controls.Add(_limit);
+            Button fill = new Button { Text = "Fill", Left = 392, Top = y - 1, Width = 70, Height = 26 };
+            fill.Click += (s, e) => FillMarks();
+            Controls.Add(fill);
             y += 34;
             Controls.Add(new Label { Text = "See-through (0 solid, 90 faint) so pipes show:", Left = 32, Top = y + 3, Width = 320 });
             _transparency.SetBounds(360, y, 70, 24);
@@ -131,12 +145,12 @@ namespace BlakesTesting.Commands
             _footage.SetBounds(32, y, 420, 22);
             Controls.Add(_footage);
 
-            Button reset = new Button { Text = "Defaults", Left = 16, Top = 660, Width = 90, Height = 28 };
+            Button reset = new Button { Text = "Defaults", Left = 16, Top = 714, Width = 90, Height = 28 };
             reset.Click += (s, e) => Pull(new TrenchMapSettings { FloorOffset = _start.FloorOffset, LevelName = _start.LevelName });
             Controls.Add(reset);
-            Button ok = new Button { Text = "OK", Left = 380, Top = 660, Width = 90, Height = 28 };
+            Button ok = new Button { Text = "OK", Left = 380, Top = 714, Width = 90, Height = 28 };
             ok.Click += (s, e) => Accept();
-            Button cancel = new Button { Text = "Cancel", Left = 476, Top = 660, Width = 90, Height = 28, DialogResult = DialogResult.Cancel };
+            Button cancel = new Button { Text = "Cancel", Left = 476, Top = 714, Width = 90, Height = 28, DialogResult = DialogResult.Cancel };
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
@@ -177,10 +191,26 @@ namespace BlakesTesting.Commands
             foreach (TrenchWidthBand b in s.WidthBands) _bands.Rows.Add(TrenchText.Feet(b.ShallowerThan), TrenchText.Feet(b.Width));
             _deeper.Text = TrenchText.Feet(s.DeeperWidth);
             _marks.Text = TrenchText.FeetList(s.DepthMarks);
+            _step.Text = TrenchText.Feet(TrenchMapSettings.DefaultMarkStep);
+            _limit.Text = TrenchText.Feet(TrenchMapSettings.DefaultMarkLimit);
             _transparency.Value = Math.Min(Math.Max(s.Transparency, 0), TrenchMapSettings.MaxTransparency);
             _footage.Checked = s.LegendFootage;
             UpdateSource();
             ShowColorHint();
+        }
+
+        // Writes a mark every step down to the limit into the marks box.
+        private void FillMarks()
+        {
+            if (!TrenchText.TryParseFeet(_step.Text, out double step) || !TrenchText.TryParseFeet(_limit.Text, out double limit)
+                || TrenchMapSettings.MarksEvery(step, limit).Count == 0)
+            {
+                MessageBox.Show(this, "Give a step and a depth to stop at, as lengths (at most " + TrenchMapSettings.MaxMarks + " colors).",
+                    "Trench Map settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            _marks.Text = TrenchText.FeetList(TrenchMapSettings.MarksEvery(step, limit));
         }
 
         private void UpdateSource()
