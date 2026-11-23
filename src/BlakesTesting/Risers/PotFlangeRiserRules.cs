@@ -58,7 +58,7 @@ namespace BlakesTesting.Risers
     ///     The rules of Pot Flange Riser, with no Revit in them. A toilet's vertical pipe is found the way the other
     ///     commands find a toilet (Place Sleeves' <c>IsPipeToiletDrain</c> in BIM Tools): a 3" sanitary ABS, PVC or cast
     ///     iron pipe standing on a quarter bend (family named Quarter, "Fourth Bend", or - this command's addition -
-    ///     "Medium Turn"), directly or through a no-hub coupling. Every such pipe on a level is then written the length
+    ///     "Medium Turn", but never a long sweep or street one), directly or through a no-hub coupling. Every such pipe on a level is then written the length
     ///     of the LONGEST one on that level, so every toilet on one floor is cut the same.
     /// </summary>
     public static class PotFlangeRiserRules
@@ -78,12 +78,21 @@ namespace BlakesTesting.Risers
         /// </summary>
         public static readonly string[] BendWords = { "quarter", "fourth bend", "medium turn" };
 
+        /// <summary>
+        ///     Words that rule a bend out even when it holds one of <see cref="BendWords"/>: "CLT PVC 304 Long Sweep Fourth Bend"
+        ///     is a fourth bend by name but it is the long sweep a stack turns into (found on a real job - the first version
+        ///     painted every one of them), and a street 90 is not a toilet's either. The toilet's bend is the plain fourth bend
+        ///     (CLT 300) or quarter bend.
+        /// </summary>
+        public static readonly string[] NotABendWords = { "long", "sweep", "street" };
+
         /// <summary>The pipe-type words Place Sleeves accepts at a toilet: ABS, PVC or cast iron.</summary>
         public static readonly string[] MaterialWords = { "abs", "pvc", "cast" };
 
         public static bool IsToiletBend(string? family, string? type)
         {
             string name = ((family ?? "") + " " + (type ?? "")).ToLowerInvariant();
+            if (NotABendWords.Any(name.Contains)) return false;
             return BendWords.Any(name.Contains);
         }
 

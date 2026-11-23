@@ -253,14 +253,21 @@ namespace BlakesTesting.Commands
                     if (def.Name != ParameterName) continue;
                     if (!(it.Current is InstanceBinding binding))
                         return $"{ParameterName} already exists in this project as a type parameter - delete it from Project Parameters and run again.";
+                    bool hasPipes = false;
                     foreach (Category c in binding.Categories)
-                        if (c.Id.ToLong() == pipes) return null;
+                        if (c.Id.ToLong() == pipes) hasPipes = true;
+
+                    // The first version made it under Data; it belongs under Graphics beside the TPI parameters. Only a
+                    // parameter still in Data is moved - one somebody put elsewhere on purpose is left where it is.
+                    bool moveToGraphics = def is InternalDefinition internalDef && internalDef.GetGroupTypeId() == GroupTypeId.Data;
+                    if (hasPipes && !moveToGraphics) return null;
 
                     CategorySet widened = doc.Application.Create.NewCategorySet();
                     foreach (Category c in binding.Categories) widened.Insert(c);
-                    widened.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_PipeCurves));
-                    if (!doc.ParameterBindings.ReInsert(def, doc.Application.Create.NewInstanceBinding(widened)))
-                        return $"{ParameterName} exists but Revit would not add Pipes to its categories.";
+                    if (!hasPipes) widened.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_PipeCurves));
+                    InstanceBinding rebound = doc.Application.Create.NewInstanceBinding(widened);
+                    bool ok = moveToGraphics ? doc.ParameterBindings.ReInsert(def, rebound, GroupTypeId.Graphics) : doc.ParameterBindings.ReInsert(def, rebound);
+                    if (!ok) return $"{ParameterName} exists but Revit would not update its categories or group.";
                     doc.Regenerate();
                     return null;
                 }
@@ -296,7 +303,7 @@ namespace BlakesTesting.Commands
 
                 CategorySet categories = app.Create.NewCategorySet();
                 categories.Insert(doc.Settings.Categories.get_Item(BuiltInCategory.OST_PipeCurves));
-                if (!doc.ParameterBindings.Insert(def, app.Create.NewInstanceBinding(categories), GroupTypeId.Data))
+                if (!doc.ParameterBindings.Insert(def, app.Create.NewInstanceBinding(categories), GroupTypeId.Graphics))
                     return $"Revit would not bind {ParameterName} to Pipes.";
                 doc.Regenerate();
                 return null;

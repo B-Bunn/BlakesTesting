@@ -131,7 +131,7 @@ The pipes' own lengths are never changed.
 **What is a toilet's pipe** (`Risers/ToiletPipeFinder.cs`, rules in `Risers/PotFlangeRiserRules.cs`) is what BIM Tools' Place Sleeves reads as a toilet drain
 (`PipeUtils.IsPipeToiletDrain`), with "Medium Turn" added to its bend words:
 
-1. A bend whose family or type name holds **Quarter**, **Fourth Bend** or **Medium Turn**.
+1. A bend whose family or type name holds **Quarter**, **Fourth Bend** or **Medium Turn** - **but not Long, Sweep or Street** ("CLT PVC 304 Long Sweep Fourth Bend" is a stack's turn, not a toilet's; the first version painted every one of them).
 2. A **vertical pipe** (steeper than 45 degrees) on one of its ports that **rises from the bend** - a pipe that drops away from it is a stack coming down, not a pot flange stub. A **no-hub coupling** between the bend and the pipe is looked through.
 3. The pipe is **sanitary**, **3"**, and its type is **ABS, PVC or cast iron**.
 
@@ -139,7 +139,7 @@ The pipes' own lengths are never changed.
 Per level: the longest usable length wins (a pipe whose length will not read is still brought to it; a level where none read is skipped and reported), and every
 toilet pipe on that level gets it in MFG.CutLength and the level's name in **Pot Flange Riser**.
 
-**Pot Flange Riser** is an instance Text parameter on Pipes. If the job does not have it the command creates it as a shared parameter (fixed GUID
+**Pot Flange Riser** is an instance Text parameter on Pipes, in the **Graphics** group with the TPI parameters (one the first version made under Data is moved there on the next run). If the job does not have it the command creates it as a shared parameter (fixed GUID
 `6a1c2f5e-3b7d-4e0a-9f48-5d2c8b1e7a90`, from a throwaway shared parameter file in the temp folder - your shared parameter file setting is put back and the team's file is
 not touched). One already bound by that name is used as it is, with Pipes added to its categories if it lacked it.
 

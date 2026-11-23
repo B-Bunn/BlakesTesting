@@ -18,6 +18,9 @@ Check(PotFlangeRiserRules.IsToiletBend("CLT 300 Fourth Bend", "3\" x 3\""), "a 3
 Check(PotFlangeRiserRules.IsToiletBend("Sanitary Medium Turn", "3\""), "a Medium Turn is");
 Check(PotFlangeRiserRules.IsToiletBend("sanitary", "MEDIUM TURN 3in"), "the type name counts, without case");
 Check(!PotFlangeRiserRules.IsToiletBend("CLT Long Sweep 90", "3\""), "a long sweep is not");
+Check(!PotFlangeRiserRules.IsToiletBend("CLT PVC 304 Long Sweep Fourth Bend HUBxHUB", "CLT PVC"), "a LONG SWEEP Fourth Bend (the stack's turn) is not, whatever it says after");
+Check(!PotFlangeRiserRules.IsToiletBend("Charlotte Street Quarter Bend", "3\""), "a street quarter bend is not");
+Check(PotFlangeRiserRules.IsToiletBend("CLT PVC 300 Fourth Bend HUBxHUB", "CLT PVC"), "the plain 300 Fourth Bend still is");
 Check(!PotFlangeRiserRules.IsToiletBend("Wye", "3\""), "a wye is not");
 Check(!PotFlangeRiserRules.IsToiletBend(null, null), "no names is not");
 Check(PotFlangeRiserRules.IsCoupling("Coupling NHxNH", "3\"") && PotFlangeRiserRules.IsCoupling("CLT Coupling NH x NH", null), "a no-hub coupling is looked through");
