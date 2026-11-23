@@ -66,9 +66,24 @@ namespace BlakesTesting.Flow
     internal sealed class FlowArrowDrawn
     {
         public List<ElementId> Ids { get; } = new List<ElementId>();
+
+        /// <summary>The arrow's own lines (what Flip turns round).</summary>
+        public List<ElementId> LineIds { get; } = new List<ElementId>();
+
+        /// <summary>The label: a text note, or in 3D its strokes (what Edit Text replaces).</summary>
+        public List<ElementId> TextIds { get; } = new List<ElementId>();
         public bool Grouped { get; set; }
         public string? GroupName { get; set; }
         public int Skipped { get; set; }
+    }
+
+    /// <summary>What a piece of an arrow is, read from its Comments. Arrows placed before the roles existed are <see cref="Old"/>.</summary>
+    internal enum ArrowRole
+    {
+        None,
+        Line,
+        Text,
+        Old,
     }
 
     /// <summary>Draws a <see cref="FlowArrowShape"/> in Revit, and finds the arrows again. Call it inside a transaction.</summary>
@@ -77,35 +92,47 @@ namespace BlakesTesting.Flow
         /// <summary>The start of every group type this makes: Clear Flow Arrows finds them by it.</summary>
         public const string GroupPrefix = "Flow Arrow";
 
-        /// <summary>Written into every element's Comments, so a stray piece (an arrow that could not be grouped) is found too.</summary>
+        /// <summary>Written into every element's Comments, so a stray piece (an arrow that could not be grouped) is found too.
+        ///          Arrows made before pieces had roles carry exactly this.</summary>
         public const string Mark = "Flow Arrow";
+
+        /// <summary>The Comments of an arrow's own lines (the shaft and the head).</summary>
+        public const string MarkLine = "Flow Arrow Line";
+
+        /// <summary>The Comments of an arrow's label: its text note, or in 3D its strokes.</summary>
+        public const string MarkText = "Flow Arrow Text";
 
         private const string TextTypePrefix = "Flow Arrow Text";
 
         /// <summary>Line.CreateBound refuses anything shorter than this (about 1/32").</summary>
         private const double ShortestCurve = 0.0026;
 
-        public static FlowArrowDrawn Draw(Document doc, FlowArrowFrame frame, FlowArrowShape shape, FlowArrowSettings settings)
+        public static FlowArrowDrawn Draw(Document doc, FlowArrowFrame frame, FlowArrowShape shape, FlowArrowSettings settings, ElementId? pipeId) =>
+            DrawShapes(doc, frame, new List<FlowArrowShape> { shape }, settings, pipeId);
+
+        /// <summary>Draws one or several arrows (a run) as ONE group. <paramref name="pipeId"/> is remembered on the group.</summary>
+        public static FlowArrowDrawn DrawShapes(Document doc, FlowArrowFrame frame, IList<FlowArrowShape> shapes, FlowArrowSettings settings, ElementId? pipeId)
         {
             FlowArrowDrawn drawn = new FlowArrowDrawn();
             GraphicsStyle? lineStyle = settings.Color.HasValue
                 ? ColoredLineStyle(doc, settings.LineStyle, settings.Color.Value)
                 : FindLineStyle(doc, settings.LineStyle);
 
-            if (frame.IsModel) DrawModel(doc, frame, shape, lineStyle, drawn);
-            else DrawAnnotation(doc, frame, shape, settings, lineStyle, drawn);
+            if (frame.IsModel) DrawModel(doc, frame, shapes, lineStyle, drawn);
+            else DrawAnnotation(doc, frame, shapes, settings, lineStyle, drawn);
 
             if (drawn.Ids.Count == 0)
                 throw new InvalidOperationException("Revit drew nothing: the arrow came out smaller than it will draw. Make the arrow longer in the Flow Arrow window, or use a larger view scale.");
 
-            foreach (ElementId id in drawn.Ids) Mark1(doc.GetElement(id));
-            Group(doc, drawn);
+            foreach (ElementId id in drawn.LineIds) SetComment(doc.GetElement(id), MarkLine);
+            foreach (ElementId id in drawn.TextIds) SetComment(doc.GetElement(id), MarkText);
+            Group(doc, drawn, pipeId);
             return drawn;
         }
 
         // ------------------------------------------------------------------ 2D: detail lines and a text note
 
-        private static void DrawAnnotation(Document doc, FlowArrowFrame frame, FlowArrowShape shape, FlowArrowSettings settings, GraphicsStyle? lineStyle, FlowArrowDrawn drawn)
+        private static void DrawAnnotation(Document doc, FlowArrowFrame frame, IList<FlowArrowShape> shapes, FlowArrowSettings settings, GraphicsStyle? lineStyle, FlowArrowDrawn drawn)
         {
             View view = frame.View;
 
@@ -117,8 +144,9 @@ namespace BlakesTesting.Flow
             origins.Add(frame.Origin);
             if (view is ViewPlan) origins.Add(new XYZ(frame.Origin.X, frame.Origin.Y, 0));
 
-            Seg[] lines = shape.Lines.Where(s => s.Length >= ShortestCurve).ToArray();
-            drawn.Skipped = shape.Lines.Count - lines.Length;
+            List<Seg> all = shapes.SelectMany(sh => sh.Lines).ToList();
+            Seg[] lines = all.Where(s => s.Length >= ShortestCurve).ToArray();
+            drawn.Skipped = all.Count - lines.Length;
 
             FlowArrowFrame f = frame;
             int next = 0;
@@ -131,7 +159,9 @@ namespace BlakesTesting.Flow
                     f = frame.WithOrigin(origin);
                     try
                     {
-                        drawn.Ids.Add(MakeDetail(doc, view, f, lines[0], lineStyle));
+                        ElementId id = MakeDetail(doc, view, f, lines[0], lineStyle);
+                        drawn.Ids.Add(id);
+                        drawn.LineIds.Add(id);
                         placedFirst = true;
                         next = 1;
                         break;
@@ -146,11 +176,17 @@ namespace BlakesTesting.Flow
             }
 
             for (int i = next; i < lines.Length; i++)
-                drawn.Ids.Add(MakeDetail(doc, view, f, lines[i], lineStyle));
-
-            if (shape.Label.Length > 0)
             {
-                ElementId type = TextType(doc, settings.TextSizeInches, settings.Color);
+                ElementId id = MakeDetail(doc, view, f, lines[i], lineStyle);
+                drawn.Ids.Add(id);
+                drawn.LineIds.Add(id);
+            }
+
+            bool opaque = settings.Position == FlowArrowPosition.InPipe;
+            foreach (FlowArrowShape shape in shapes)
+            {
+                if (shape.Label.Length == 0) continue;
+                ElementId type = TextType(doc, settings.TextSizeInches, settings.Color, opaque);
                 TextNoteOptions options = new TextNoteOptions(type)
                 {
                     HorizontalAlignment = HorizontalTextAlignment.Center,
@@ -159,6 +195,7 @@ namespace BlakesTesting.Flow
                 };
                 TextNote note = TextNote.Create(doc, view.Id, f.To3D(shape.LabelCenter), shape.Label, options);
                 drawn.Ids.Add(note.Id);
+                drawn.TextIds.Add(note.Id);
             }
         }
 
@@ -169,10 +206,10 @@ namespace BlakesTesting.Flow
             return curve.Id;
         }
 
-        private static ElementId TextType(Document doc, double inches, RgbColor? color)
+        private static ElementId TextType(Document doc, double inches, RgbColor? color, bool opaque)
         {
             string name = TextTypePrefix + " " + inches.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)
-                          + "in" + (color.HasValue ? " " + color.Value.ToHex() : "");
+                          + "in" + (opaque ? " opaque" : "") + (color.HasValue ? " " + color.Value.ToHex() : "");
             TextNoteType? type = FindTextType(doc, name);
             if (type != null) return type.Id;
 
@@ -182,7 +219,7 @@ namespace BlakesTesting.Flow
                                     ?? throw new InvalidOperationException("This project has no text type to make the arrow's text from.");
             type = (TextNoteType)baseType.Duplicate(name);
             type.get_Parameter(BuiltInParameter.TEXT_SIZE)?.Set(inches / 12.0);
-            type.get_Parameter(BuiltInParameter.TEXT_BACKGROUND)?.Set(1); // transparent: a pipe shows through
+            type.get_Parameter(BuiltInParameter.TEXT_BACKGROUND)?.Set(opaque ? 0 : 1); // transparent, so a pipe shows through; opaque to break it
             type.get_Parameter(BuiltInParameter.TEXT_BOX_VISIBILITY)?.Set(0); // no border
             if (color.HasValue) type.get_Parameter(BuiltInParameter.TEXT_COLOR)?.Set(ColorInt(color.Value));
             return type.Id;
@@ -199,51 +236,113 @@ namespace BlakesTesting.Flow
 
         // ------------------------------------------------------------------ 3D: model lines, the text as strokes
 
-        private static void DrawModel(Document doc, FlowArrowFrame frame, FlowArrowShape shape, GraphicsStyle? lineStyle, FlowArrowDrawn drawn)
+        private static void DrawModel(Document doc, FlowArrowFrame frame, IList<FlowArrowShape> shapes, GraphicsStyle? lineStyle, FlowArrowDrawn drawn)
         {
             SketchPlane plane = SketchPlane.Create(doc, Plane.CreateByOriginAndBasis(frame.Origin, frame.Right, frame.Up));
-            List<Seg> all = new List<Seg>(shape.Lines);
-            if (shape.Label.Length > 0) all.AddRange(StrokeFont.Layout(shape.Label, shape.LabelHeight, shape.LabelCenter, shape.LabelAngle));
 
-            foreach (Seg s in all)
+            foreach (FlowArrowShape shape in shapes)
             {
-                if (s.Length < ShortestCurve)
-                {
-                    drawn.Skipped++;
-                    continue;
-                }
-
-                // A line a hair off an axis (a vertical pipe's arrow in a camera that is not exactly upright) makes Revit warn
-                // "Line is slightly off axis": put it exactly on the axis.
-                XYZ from = frame.To3D(s.A), to = frame.To3D(s.B);
-                (double X, double Y, double Z) snapped = AxisSnap.SnapEnd((from.X, from.Y, from.Z), (to.X, to.Y, to.Z));
-                ModelCurve curve = doc.Create.NewModelCurve(Line.CreateBound(from, new XYZ(snapped.X, snapped.Y, snapped.Z)), plane);
-                if (lineStyle != null) curve.LineStyle = lineStyle;
-                drawn.Ids.Add(curve.Id);
+                foreach (Seg s in shape.Lines) AddModelLine(doc, frame, plane, s, lineStyle, drawn, drawn.LineIds);
+                if (shape.Label.Length > 0)
+                    foreach (Seg s in StrokeFont.Layout(shape.Label, shape.LabelHeight, shape.LabelCenter, shape.LabelAngle))
+                        AddModelLine(doc, frame, plane, s, lineStyle, drawn, drawn.TextIds);
             }
+        }
+
+        private static void AddModelLine(Document doc, FlowArrowFrame frame, SketchPlane plane, Seg s, GraphicsStyle? lineStyle, FlowArrowDrawn drawn, List<ElementId> into)
+        {
+            if (s.Length < ShortestCurve)
+            {
+                drawn.Skipped++;
+                return;
+            }
+
+            // A line a hair off an axis (a vertical pipe's arrow in a camera that is not exactly upright) makes Revit warn
+            // "Line is slightly off axis": put it exactly on the axis.
+            XYZ from = frame.To3D(s.A), to = frame.To3D(s.B);
+            (double X, double Y, double Z) snapped = AxisSnap.SnapEnd((from.X, from.Y, from.Z), (to.X, to.Y, to.Z));
+            ModelCurve curve = doc.Create.NewModelCurve(Line.CreateBound(from, new XYZ(snapped.X, snapped.Y, snapped.Z)), plane);
+            if (lineStyle != null) curve.LineStyle = lineStyle;
+            drawn.Ids.Add(curve.Id);
+            into.Add(curve.Id);
         }
 
         // ------------------------------------------------------------------ grouping, marking, finding
 
-        private static void Mark1(Element? e)
+        internal static void SetComment(Element? e, string value)
         {
-            e?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(Mark);
+            e?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(value);
         }
 
-        private static void Group(Document doc, FlowArrowDrawn drawn)
+        internal static string? CommentOf(Element? e) => e?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString();
+
+        internal static ArrowRole RoleOf(Element? e)
+        {
+            string? c = CommentOf(e);
+            if (c == MarkLine) return ArrowRole.Line;
+            if (c == MarkText) return ArrowRole.Text;
+            if (c == Mark) return ArrowRole.Old;
+            return ArrowRole.None;
+        }
+
+        /// <summary>The note on a group: the mark, and which pipe it is on, so Place on Selected Pipes can leave that pipe alone.</summary>
+        private static string GroupNote(ElementId? pipeId) => pipeId == null ? Mark : Mark + " pipe=" + pipeId;
+
+        private static readonly Regex PipeNote = new Regex(@"pipe=(\d+)", RegexOptions.Compiled);
+
+        /// <summary>The ids (as text) of the pipes these arrows are on, for the arrows that remember one.</summary>
+        public static HashSet<string> PipeIdsWithArrows(IEnumerable<Autodesk.Revit.DB.Group> groups)
+        {
+            HashSet<string> ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Autodesk.Revit.DB.Group g in groups)
+            {
+                Match m = PipeNote.Match(CommentOf(g) ?? string.Empty);
+                if (m.Success) ids.Add(m.Groups[1].Value);
+            }
+
+            return ids;
+        }
+
+        private static void Group(Document doc, FlowArrowDrawn drawn, ElementId? pipeId)
         {
             if (drawn.Ids.Count < 2) return;
-            try
+            string name = UniqueGroupName(doc);
+            if (Regroup(doc, drawn.Ids, name, GroupNote(pipeId)))
             {
-                Autodesk.Revit.DB.Group group = doc.Create.NewGroup(drawn.Ids);
-                string name = UniqueGroupName(doc);
-                group.GroupType.Name = name;
                 drawn.Grouped = true;
                 drawn.GroupName = name;
             }
+
+            // Otherwise left as loose lines and text: still found by Clear Flow Arrows through the Comments mark.
+        }
+
+        /// <summary>Groups the elements under <paramref name="name"/> (or a free name when taken); false when Revit refuses.</summary>
+        internal static bool Regroup(Document doc, ICollection<ElementId> ids, string name, string? note)
+        {
+            if (ids.Count < 2) return false;
+            try
+            {
+                Autodesk.Revit.DB.Group group = doc.Create.NewGroup(ids.ToList());
+                group.GroupType.Name = IsGroupNameFree(doc, name) ? name : UniqueGroupName(doc);
+                if (note != null) SetComment(group, note);
+                return true;
+            }
             catch (Autodesk.Revit.Exceptions.ApplicationException)
             {
-                // Left as loose lines and text: still found by Clear Flow Arrows through the Comments mark.
+                return false;
+            }
+        }
+
+        /// <summary>Takes a group's type out of the project once no group uses it.</summary>
+        internal static void DeleteTypeIfUnused(Document doc, ElementId typeId)
+        {
+            try
+            {
+                if (doc.GetElement(typeId) is GroupType t && t.Groups.Size == 0) doc.Delete(typeId);
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException)
+            {
+                // An old type left over is only clutter.
             }
         }
 
@@ -330,29 +429,12 @@ namespace BlakesTesting.Flow
             foreach (Autodesk.Revit.DB.Group g in groups)
             {
                 string name = g.GroupType.Name;
+                string? note = CommentOf(g);
                 ElementId oldType = g.GroupType.Id;
                 List<ElementId> members = g.UngroupMembers().ToList();
                 ApplyColor(doc, members, color, style);
-
-                try
-                {
-                    if (doc.GetElement(oldType) is GroupType t && t.Groups.Size == 0) doc.Delete(oldType);
-                }
-                catch (Autodesk.Revit.Exceptions.ApplicationException)
-                {
-                    // An old type left over is only clutter.
-                }
-
-                try
-                {
-                    Autodesk.Revit.DB.Group again = doc.Create.NewGroup(members);
-                    again.GroupType.Name = IsGroupNameFree(doc, name) ? name : UniqueGroupName(doc);
-                }
-                catch (Autodesk.Revit.Exceptions.ApplicationException)
-                {
-                    ungrouped++;
-                }
-
+                DeleteTypeIfUnused(doc, oldType);
+                if (!Regroup(doc, members, name, note)) ungrouped++;
                 done++;
             }
 
@@ -425,7 +507,7 @@ namespace BlakesTesting.Flow
                 foreach (Element e in new FilteredElementCollector(doc, view.Id).OfClass(t))
                 {
                     if (e.GroupId != ElementId.InvalidElementId) continue;
-                    if (e.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() == Mark) loose.Add(e.Id);
+                    if (RoleOf(e) != ArrowRole.None) loose.Add(e.Id);
                 }
 
             return (groups, loose);

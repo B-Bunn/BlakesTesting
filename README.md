@@ -48,6 +48,10 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `TrenchMapOptions` | The Trench Map settings: spoils depth or bottom of pipe, the floor, the width rule, the depths the colors change at, see-through. Saved per user in `%AppData%\BlakesTesting\TrenchMap.ini`. |
 | `ClearTrenchMap` | Takes the trench map (colored regions and legend) out of the active view. |
 | `FlowArrow` | Marks the **direction of flow on a pipe** with an arrow and a **label you choose** (`FLOW`, `STORM`, ...), like a spot slope. Works in a **plan, section, elevation, detail or 3D view**. Two clicks: a point on the pipe, then a point toward the way it flows. Repeats until Esc. Details below. |
+| `FlowArrowRun` | **Flow Run**: arrows repeated along a stretch of one pipe, about every 3 to 50 ft, pointing toward the second click, away from it, or downhill; the text on the one nearest the middle. One group per run. |
+| `FlowArrowOnSelectedPipes` | One arrow on the middle of **each selected pipe** (or pipes you pick), pointing **downhill by slope**, no clicking. Leaves out pipes too short for the arrow and text, pointing at the viewer, or (if ticked) already carrying an arrow in the view. One Undo. |
+| `FlipFlowArrows` | Points the arrows already placed (selected, or all in the view) the other way. The text stays put. |
+| `EditFlowArrowText` | Gives the arrows already placed (selected, or all in the view) new text, or takes it off. |
 | `RecolorFlowArrows` | Changes the color of flow arrows already placed (and their text) in the active view, or only the selected ones. |
 | `ClearFlowArrows` | Removes the flow arrows from the active view (or only the selected ones). |
 
@@ -168,6 +172,26 @@ the sheet at any view scale, as a spot slope does), a **color** (a swatch, six q
 
 The text is always upright, whichever way the pipe runs.
 
+**Position** is *beside the pipe* (default), *on the pipe*, or *text in the pipe*: the arrow beside the pipe and the text on its centre line on an **opaque** background, so the
+pipe seems broken for it (in a 3D view the text is lines and cannot hide the pipe, so it just sits on it). **Text reads** *along the pipe, upright* (default) or *always level*.
+
+**The other commands** open the same window (it shows the options each one uses) and share its settings; hold Shift to skip it.
+
+- **Flow Run**: click where a run starts and where it ends on one pipe. The stretch is split into equal cells about the *spacing* apart (3, 5, 8, 10, 15, 20, 30 or 50 ft),
+  an arrow in the middle of each, pointing *toward* the second click, *away* from it, or *downhill*; the text on one arrow near the middle. The first click's side of the
+  pipe picks the side, as for one arrow. A stretch shorter than the arrow is refused; a second click past the pipe's end stops at the end.
+- **Flow Arrow on Selected Pipes**: select pipes first (or you are asked to pick them) and it puts one arrow on the middle of each, pointing downhill by slope. Each pipe it
+  marks is remembered (`Comments` on the group: `Flow Arrow pipe=<id>`), so with *Leave pipes that already have an arrow alone* ticked a second run does not double them up.
+  Pipes shorter than the longer of the arrow and the text (plus a quarter), pointing at the viewer, or already marked are skipped and counted. Level pipes point the way they
+  were drawn, and the summary says how many.
+- **Flip Flow Arrows** turns the arrows half a turn about their own middle (the lines only; the text stays). **Edit Flow Arrow Text** replaces the text (or removes it): a 2D
+  arrow's text note is edited, a 3D arrow's strokes are redrawn in the plane they were in. An arrow with no text to begin with is skipped (nothing says where its text would
+  go). Both work on the selected arrows or every one in the view, and neither touches the loose pieces of arrows that could not be grouped.
+  3D arrows placed before pieces were given roles (`Comments` `Flow Arrow Line` / `Flow Arrow Text`) are skipped by both: place those again.
+- Revit warns "A group has been changed outside group edit mode" when you edit inside an arrow's group by hand (double-clicking its text, say). It is allowed because every
+  arrow has its own group type, and harmless; these commands avoid it by taking the group apart and putting it back under the same name. (A *copied* arrow shares its type with
+  the original, and then editing one by hand changes both; the commands give the one you edit a type of its own.)
+
 **In a plan, section, elevation or detail view** the arrow is view-specific **detail lines** (in the `Medium Lines` line style, if the project
 has it) and a **text note** (a type named `Flow Arrow Text <size>`, transparent, no border), grouped as a **detail group** named `Flow Arrow n`.
 **In a 3D view** Revit's API cannot make text or any annotation, so the arrow is **model lines** in a plane through the first click that faces the
@@ -191,7 +215,7 @@ tested without Revit, with the stroke font:
 
 **Not verified in Revit.** Try it in a plan of a sloped sanitary run at 1/8" and again at 1/4": the arrow and text should keep their size on
 the sheet; a pipe drawn backwards; a vertical riser (refused: it points at the viewer in a plan); a section and an elevation; then in a 3D view.
-Things to look for: a color on a new arrow and on the text, `RecolorFlowArrows` on arrows placed before, the text centred on the arrow, the arrow clear of the pipe, the text upright on diagonal and vertical pipes, a group that
+Things to look for: Flow Run on a long main at 8 ft and 20 ft, Flow Arrow on Selected Pipes on a whole sloped run (then again, to see it skip), Flip and Edit Text on arrows you placed, text in the pipe, a color on a new arrow and on the text, `RecolorFlowArrows` on arrows placed before, the text centred on the arrow, the arrow clear of the pipe, the text upright on diagonal and vertical pipes, a group that
 moves as one, Undo, `ClearFlowArrows`, and whether Revit accepts the text note inside a detail group.
 
 ## Adding a scratch command

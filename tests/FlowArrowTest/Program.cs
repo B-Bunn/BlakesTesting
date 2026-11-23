@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using BlakesTesting.Flow;
 using BlakesTesting.Risers;
@@ -46,6 +47,8 @@ internal static class Program
         EndOn();
         Font();
         Snap();
+        NewOptions();
+        Run();
         Console.WriteLine(_failures == 0 ? "OK - " + _checks + " checks" : _failures + " of " + _checks + " checks FAILED");
         return _failures == 0 ? 0 : 1;
     }
@@ -248,6 +251,99 @@ internal static class Program
         // Already exact, or nothing: unchanged.
         Check(AxisSnap.SnapEnd((1, 1, 1), (1, 1, 8)) == (1, 1, 8), "an exact vertical line is unchanged");
         Check(AxisSnap.SnapEnd((1, 1, 1), (1, 1, 1)) == (1, 1, 1), "a zero-length line is unchanged");
+    }
+
+    private static FlowArrowShape With(Action<FlowArrowSettings> tweak, V2 click1, V2? click2, V2? a = null, V2? b = null)
+    {
+        FlowArrowSettings st = Plain();
+        tweak(st);
+        return FlowArrowLayout.Compute(new FlowArrowInput(a ?? new V2(0, 0), b ?? new V2(30, 0), 4.0 / 12 / 2, click1, click2, 96, 1, st), out _)!;
+    }
+
+    private static void NewOptions()
+    {
+        // In the pipe: the text sits ON the pipe, the arrow stays beside it.
+        FlowArrowShape inPipe = With(st => st.Position = FlowArrowPosition.InPipe, new V2(10, 0.1), new V2(16, 0));
+        Near(inPipe.LabelCenter.Y, 0, "in-the-pipe text is on the pipe's centre line");
+        Near(inPipe.LabelCenter.X, 10, "and centred on the arrow's place along it");
+        Check(inPipe.Lines[0].A.Y > 4.0 / 12 / 2, "while the arrow is beside the pipe, clear of it");
+
+        // Always-level text on a vertical pipe: level, and clear of the pipe by half its width.
+        V2 va = new V2(0, 0), vb = new V2(0, 20);
+        FlowArrowShape level = With(st => st.TextReading = FlowArrowTextReading.Horizontal, new V2(0.1, 10), new V2(0, 14), va, vb);
+        Near(level.LabelAngle, 0, "level text on a vertical pipe has angle 0");
+        FlowArrowShape along = With(st => { }, new V2(0.1, 10), new V2(0, 14), va, vb);
+        Check(Math.Abs(level.LabelCenter.X) > Math.Abs(along.LabelCenter.X), "level text on a vertical pipe is held further from it, so its width clears the pipe");
+        Check(level.LabelCenter.X > 0, "and still on the side that was clicked");
+        double halfWidth = StrokeFont.Width("FLOW", level.LabelHeight) / 2;
+        Check(level.LabelCenter.X - halfWidth > 4.0 / 12 / 2, "its near edge is clear of the pipe");
+        // On a horizontal pipe it makes no difference.
+        FlowArrowShape h1 = With(st => st.TextReading = FlowArrowTextReading.Horizontal, new V2(10, 0.1), new V2(16, 0));
+        FlowArrowShape h2 = With(st => { }, new V2(10, 0.1), new V2(16, 0));
+        Near(h1.LabelCenter.Y, h2.LabelCenter.Y, "level text on a level pipe is placed as before");
+
+        // Settings: the new ones survive the file.
+        FlowArrowSettings s = new FlowArrowSettings { Position = FlowArrowPosition.InPipe, TextReading = FlowArrowTextReading.Horizontal, RunSpacingFeet = 12.5, RunDirection = FlowArrowRunDirection.FollowSlope, SkipMarked = false };
+        FlowArrowSettings back = FlowArrowSettings.Parse(s.ToText());
+        Check(back.Position == FlowArrowPosition.InPipe && back.TextReading == FlowArrowTextReading.Horizontal, "position and text reading survive the file");
+        Check(back.RunDirection == FlowArrowRunDirection.FollowSlope && !back.SkipMarked, "run direction and skip-marked survive the file");
+        Near(back.RunSpacingFeet, 12.5, "run spacing survives the file");
+        Check(new FlowArrowSettings().SkipMarked, "skipping pipes that already have an arrow is on by default");
+        Near(FlowArrowSettings.Parse("RunSpacingFeet=0\n").RunSpacingFeet, 1, "a run spacing under a foot is raised to a foot");
+
+        // The shortest pipe Place on Selected Pipes will mark: the longer of arrow and text, and a quarter more.
+        FlowArrowSettings plain = Plain();
+        Near(FlowArrowLayout.MinimumPipeLength(plain, 96), Math.Max(4, StrokeFont.Width("FLOW", 0.75)) * 1.25, "the shortest pipe it will mark is the longer of the arrow and the text, plus a quarter");
+        Check(FlowArrowLayout.MinimumPipeLength(plain, 48) < FlowArrowLayout.MinimumPipeLength(plain, 96), "and it is shorter at a larger scale");
+    }
+
+    private static List<FlowArrowShape> RunOf(Action<FlowArrowSettings> tweak, V2 c1, V2? c2, int auto = 1, V2? a = null, V2? b = null)
+    {
+        FlowArrowSettings st = Plain();
+        tweak(st);
+        List<FlowArrowShape>? r = FlowArrowLayout.ComputeRun(new FlowArrowInput(a ?? new V2(0, 0), b ?? new V2(60, 0), 4.0 / 12 / 2, c1, c2, 96, auto, st), out string? problem);
+        Check(r != null, "run lays out (" + problem + ")");
+        return r!;
+    }
+
+    private static void Run()
+    {
+        // 8 ft spacing over 32 ft: four equal cells, an arrow in the middle of each.
+        List<FlowArrowShape> run = RunOf(st => { }, new V2(10, 0.1), new V2(42, 0));
+        Check(run.Count == 4, "32 ft at about 8 ft apart is four arrows");
+        Near(run[0].Anchor.X, 14, "the first is in the middle of the first cell");
+        Near(run[3].Anchor.X, 38, "the last in the middle of the last");
+        Near(run[1].Anchor.X - run[0].Anchor.X, 8, "they are evenly spaced");
+        Check(run.All(r => r.Direction == 1), "toward the second click, to the right");
+        Check(run.Count(r => r.Label.Length > 0) == 1 && run[2].Label == "FLOW", "only one arrow, near the middle, carries the text");
+
+        // Backwards: toward the start, and the same stretch.
+        List<FlowArrowShape> back = RunOf(st => { }, new V2(42, 0.1), new V2(10, 0));
+        Check(back.Count == 4 && back.All(r => r.Direction == -1), "clicked right to left the arrows point left");
+        List<FlowArrowShape> away = RunOf(st => st.RunDirection = FlowArrowRunDirection.AwayFromSecondClick, new V2(10, 0.1), new V2(42, 0));
+        Check(away.All(r => r.Direction == -1), "'away from the second click' reverses them");
+        List<FlowArrowShape> slope = RunOf(st => st.RunDirection = FlowArrowRunDirection.FollowSlope, new V2(10, 0.1), new V2(42, 0), auto: -1);
+        Check(slope.All(r => r.Direction == -1 && r.Automatic), "'follow slope' takes the pipe's fall, whichever way the clicks went");
+
+        // Spacing, and the least: one arrow.
+        List<FlowArrowShape> wide = RunOf(st => st.RunSpacingFeet = 20, new V2(10, 0), new V2(42, 0));
+        Check(wide.Count == 2, "20 ft spacing over 32 ft is two arrows");
+        List<FlowArrowShape> one = RunOf(st => st.RunSpacingFeet = 50, new V2(10, 0), new V2(42, 0));
+        Check(one.Count == 1 && one[0].Label == "FLOW" && Math.Abs(one[0].Anchor.X - 26) < 1e-9, "a spacing longer than the run is one arrow in the middle");
+
+        // Side: the first click's side, as for one arrow.
+        Check(RunOf(st => { }, new V2(10, -0.1), new V2(42, 0)).All(r => r.Side == -1), "the first click on the lower half puts the whole run below");
+        Check(RunOf(st => { }, new V2(10, 0), new V2(42, 3)).All(r => r.Side == 1), "a second click clearly above puts it above");
+
+        // Too short, and not two clicks.
+        Check(FlowArrowLayout.ComputeRun(new FlowArrowInput(new V2(0, 0), new V2(60, 0), 0.17, new V2(10, 0), new V2(11, 0), 96, 1, Plain()), out string? p1) == null && p1 != null,
+            "a stretch shorter than the arrow is refused with a reason");
+        Check(FlowArrowLayout.ComputeRun(new FlowArrowInput(new V2(0, 0), new V2(60, 0), 0.17, new V2(10, 0), null, 96, 1, Plain()), out string? p2) == null && p2 != null,
+            "a run with one click is refused with a reason");
+
+        // The end of the pipe stops it: a second click past the end only reaches the end.
+        List<FlowArrowShape> clipped = RunOf(st => { }, new V2(40, 0), new V2(500, 0));
+        Check(clipped.Max(r => r.Anchor.X) <= 60 + 1e-9, "a second click past the end of the pipe stops at the end");
     }
 
     private static void Font()

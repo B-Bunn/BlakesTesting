@@ -23,6 +23,31 @@ namespace BlakesTesting.Flow
 
         /// <summary>Along the pipe's centre line, the text above it.</summary>
         On,
+
+        /// <summary>The arrow beside the pipe and the text ON the pipe, on an opaque background so the pipe seems broken for it.
+        ///          (In a 3D view the text is lines, which cannot hide the pipe, so it just sits on it.)</summary>
+        InPipe,
+    }
+
+    public enum FlowArrowTextReading
+    {
+        /// <summary>The text runs along the pipe, upright: level on a horizontal pipe, bottom to top on a vertical one.</summary>
+        WithPipe,
+
+        /// <summary>The text is always level, whichever way the pipe runs.</summary>
+        Horizontal,
+    }
+
+    public enum FlowArrowRunDirection
+    {
+        /// <summary>Flow Run: the arrows point toward the second click.</summary>
+        TowardSecondClick,
+
+        /// <summary>Flow Run: the arrows point away from the second click.</summary>
+        AwayFromSecondClick,
+
+        /// <summary>Flow Run: each pipe's slope decides, pointing toward its lower end.</summary>
+        FollowSlope,
     }
 
     /// <summary>
@@ -43,6 +68,16 @@ namespace BlakesTesting.Flow
         public FlowArrowStyle Style { get; set; } = FlowArrowStyle.Arrow;
 
         public FlowArrowPosition Position { get; set; } = FlowArrowPosition.Beside;
+
+        public FlowArrowTextReading TextReading { get; set; } = FlowArrowTextReading.WithPipe;
+
+        /// <summary>Flow Run: about how far apart the arrows are, feet of the model.</summary>
+        public double RunSpacingFeet { get; set; } = 8;
+
+        public FlowArrowRunDirection RunDirection { get; set; } = FlowArrowRunDirection.TowardSecondClick;
+
+        /// <summary>Place on Selected Pipes: leave a pipe alone when it already has an arrow in the view.</summary>
+        public bool SkipMarked { get; set; } = true;
 
         /// <summary>Arrow length on paper, inches.</summary>
         public double ArrowLengthInches { get; set; } = 0.5;
@@ -80,6 +115,8 @@ namespace BlakesTesting.Flow
             if (double.IsNaN(TextSizeInches) || TextSizeInches < 1.0 / 32) TextSizeInches = 1.0 / 32;
             if (TextSizeInches > 0.75) TextSizeInches = 0.75;
             if (string.IsNullOrWhiteSpace(LineStyle)) LineStyle = "Medium Lines";
+            if (double.IsNaN(RunSpacingFeet) || RunSpacingFeet < 1) RunSpacingFeet = 1;
+            if (RunSpacingFeet > 200) RunSpacingFeet = 200;
             return this;
         }
 
@@ -93,6 +130,10 @@ namespace BlakesTesting.Flow
             TextSizeInches = TextSizeInches,
             LineStyle = LineStyle,
             Color = Color,
+            TextReading = TextReading,
+            RunSpacingFeet = RunSpacingFeet,
+            RunDirection = RunDirection,
+            SkipMarked = SkipMarked,
         };
 
         // ------------------------------------------------------------------ the file
@@ -111,6 +152,10 @@ namespace BlakesTesting.Flow
             sb.AppendLine("TextSizeInches=" + TextSizeInches.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture));
             sb.AppendLine("LineStyle=" + LineStyle);
             sb.AppendLine("Color=" + (Color.HasValue ? Color.Value.ToHex() : "auto"));
+            sb.AppendLine("TextReading=" + TextReading);
+            sb.AppendLine("RunSpacingFeet=" + RunSpacingFeet.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+            sb.AppendLine("RunDirection=" + RunDirection);
+            sb.AppendLine("SkipMarked=" + SkipMarked);
             foreach (string r in Recent) sb.AppendLine("Recent=" + r);
             return sb.ToString();
         }
@@ -142,6 +187,12 @@ namespace BlakesTesting.Flow
                         if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double size)) s.TextSizeInches = size;
                         break;
                     case "linestyle": s.LineStyle = value; break;
+                    case "textreading": if (Enum.TryParse(value, true, out FlowArrowTextReading tr)) s.TextReading = tr; break;
+                    case "rundirection": if (Enum.TryParse(value, true, out FlowArrowRunDirection rd)) s.RunDirection = rd; break;
+                    case "skipmarked": if (bool.TryParse(value, out bool sm)) s.SkipMarked = sm; break;
+                    case "runspacingfeet":
+                        if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double sp)) s.RunSpacingFeet = sp;
+                        break;
                     case "color": s.Color = RgbColor.TryParse(value, out RgbColor c) ? c : (RgbColor?)null; break;
                 }
             }
