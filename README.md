@@ -47,6 +47,8 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `TrenchMap` | A **color-coded trench plan with a legend** in the active plan view: each trench is a filled rectangle along the pipe, as wide as BIM Tools' Calculate Spoils digs it at that depth, **colored by width and depth together**, with the legend off to the right of the trench (color, width, depth range, footage). Uses the selected pipes, or every pipe in the view. Details below. |
 | `TrenchMapOptions` | The Trench Map settings: spoils depth or bottom of pipe, the floor, the width rule, the depths the colors change at, see-through. Saved per user in `%AppData%\BlakesTesting\TrenchMap.ini`. |
 | `ClearTrenchMap` | Takes the trench map (colored regions and legend) out of the active view. |
+| `FlowArrow` | Marks the **direction of flow on a pipe** with an arrow and a **label you choose** (`FLOW`, `STORM`, ...), like a spot slope. Works in a **plan, section, elevation, detail or 3D view**. Two clicks: a point on the pipe, then a point toward the way it flows. Repeats until Esc. Details below. |
+| `ClearFlowArrows` | Removes the flow arrows from the active view (or only the selected ones). |
 
 `CopyHostParametersToNested` matches parameters the way Revit does: a shared parameter by GUID, a built-in by its id, a family parameter by name *and* kind of value (a text "Size" is never forced into a numeric one). Read-only targets (e.g. already driven by the host through an association) are skipped, and so are built-ins that place or host an element (level, offsets, host, phase, workset, design option, family/type) - copying those would move the nested part. Everything else, Mark and Comments included, is copied. Type parameters are not touched. **Only nested families set to *Shared* in the family editor exist as separate elements in a project**, so a nested part that still is not picked up is not shared - open the family, select the nested family, tick *Shared*, reload. A host parameter a nested family does not have at all cannot be copied; the dialog lists those (add the parameter to that family, or bind the project/shared parameter to its category). **Not verified in Revit.**
 
@@ -146,6 +148,43 @@ with nothing selected, then with a few pipes selected; check the widths and band
 legend sits clear of the trench at 1/8" and 1/4" scale, that the colors show through at 30% (and what a Revit that refuses the
 transparency override looks like), a cropped view (the legend can fall outside the crop), a model with a sloped slab (Floors mode), and
 Undo.
+
+### Flow Arrow
+
+Opens a small window first (hold **Shift** as you start the command to skip it and use the last settings): the **text** on the arrow
+(type anything, or pick `FLOW`, `SAN`, `STORM`, `WASTE`, `VENT`, `DOMESTIC WATER` or one you used before; empty = an arrow with no text),
+the **arrow** (open arrow or three chevrons), its **length** and the **text height** (both in *paper* inches, so they keep that size on
+the sheet at any view scale, as a spot slope does), and whether it sits **beside the pipe** or **on** it. Saved per user in
+`%AppData%\BlakesTesting\FlowArrow.ini`. Then the command asks for clicks and repeats until Esc:
+
+1. **Click a point on a pipe.** The arrow goes there (put onto the pipe's line).
+2. **Click toward the way it flows.** Measured along the pipe, that sets the direction. Measured **across** the pipe, it sets the **side
+   the text is on** (above or below a horizontal pipe, left or right of a vertical one). Click **the same spot again** (or just across the
+   pipe) and the **pipe's slope decides**: the arrow points toward its lower end. A level pipe has no downhill, so it points the way the
+   pipe was drawn, and the summary says how many did.
+
+The text is always upright, whichever way the pipe runs.
+
+**In a plan, section, elevation or detail view** the arrow is view-specific **detail lines** (in the `Medium Lines` line style, if the project
+has it) and a **text note** (a type named `Flow Arrow Text <size>`, transparent, no border), grouped as a **detail group** named `Flow Arrow n`.
+**In a 3D view** Revit's API cannot make text or any annotation, so the arrow is **model lines** in a plane through the first click that faces the
+camera, and the text is **drawn from lines** (`Flow/StrokeFont.cs`: capitals, digits and `- . , : / + ( ) "` only; lower case is drawn as
+capitals), grouped as a **model group**. Sizes come from the 3D view's scale, so use a scale (not a perspective camera) you would draw at.
+A 3D arrow is a model element, so it **shows in other views too**; every piece has **Comments = `Flow Arrow`**, so a view filter on that hides them.
+In a 3D view the second click has to be on something (a pipe or any other element), since Revit has no free point there: click further along
+the pipe for the direction, or on the same spot of the pipe to follow its slope.
+
+One Undo takes back the last arrow. `ClearFlowArrows` finds them by the group type name, so nothing you drew is ever touched.
+
+How it lays out is in `Flow/FlowArrowLayout.cs` and the settings in `Flow/FlowArrowSettings.cs`; neither has a Revit type in it, and both are
+tested without Revit, with the stroke font:
+
+    dotnet run --project tests/FlowArrowTest
+
+**Not verified in Revit.** Try it in a plan of a sloped sanitary run at 1/8" and again at 1/4": the arrow and text should keep their size on
+the sheet; a pipe drawn backwards; a vertical riser (refused: it points at the viewer in a plan); a section and an elevation; then in a 3D view.
+Things to look for: the text centred on the arrow, the arrow clear of the pipe, the text upright on diagonal and vertical pipes, a group that
+moves as one, Undo, `ClearFlowArrows`, and whether Revit accepts the text note inside a detail group.
 
 ## Adding a scratch command
 

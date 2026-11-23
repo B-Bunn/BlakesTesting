@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Revit-free check of Flow Arrow: the settings file, the arrow's geometry and the stroke font. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\BlakesTesting\Flow\FlowArrowSettings.cs" Link="FlowArrowSettings.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Flow\FlowArrowLayout.cs" Link="FlowArrowLayout.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Flow\StrokeFont.cs" Link="StrokeFont.cs" />
+  </ItemGroup>
+</Project>
