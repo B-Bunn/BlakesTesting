@@ -188,6 +188,8 @@ pipe seems broken for it (in a 3D view the text is lines and cannot hide the pip
   arrow's text note is edited, a 3D arrow's strokes are redrawn in the plane they were in. An arrow with no text to begin with is skipped (nothing says where its text would
   go). Both work on the selected arrows or every one in the view, and neither touches the loose pieces of arrows that could not be grouped.
   3D arrows placed before pieces were given roles (`Comments` `Flow Arrow Line` / `Flow Arrow Text`) are skipped by both: place those again.
+- Every transaction these commands open discards the one warning Revit raises for it on placement (`BuiltInFailures.GroupFailures.AtomViolationWhenOnePlaceInstance`, `Flow/QuietGroupWarning.cs`),
+  and nothing else. If a dialog still shows, press **Expand >>** and note which element it names.
 - Revit warns "A group has been changed outside group edit mode" when you edit inside an arrow's group by hand (double-clicking its text, say). It is allowed because every
   arrow has its own group type, and harmless; these commands avoid it by taking the group apart and putting it back under the same name. (A *copied* arrow shares its type with
   the original, and then editing one by hand changes both; the commands give the one you edit a type of its own.)

@@ -95,6 +95,7 @@ namespace BlakesTesting.Commands
                 using (Transaction t = new Transaction(doc, "Flow Arrow"))
                 {
                     t.Start();
+                    QuietGroupWarning.On(t);
                     try
                     {
                         FlowArrowDrawing.DrawShapes(doc, frame, shapes, settings, pipeId);
@@ -253,6 +254,7 @@ namespace BlakesTesting.Commands
             using (Transaction t = new Transaction(doc, Title))
             {
                 t.Start();
+                    QuietGroupWarning.On(t);
                 foreach (FlowPipe pipe in pipes)
                 {
                     XYZ mid = ((LocationCurve)pipe.Pipe.Location).Curve.Evaluate(0.5, true);

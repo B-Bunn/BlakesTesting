@@ -57,6 +57,7 @@ namespace BlakesTesting.Commands
             using (Transaction t = new Transaction(doc, Title))
             {
                 t.Start();
+                    QuietGroupWarning.On(t);
                 List<ElementId> types = new List<ElementId>();
                 List<ElementId> groupIds = new List<ElementId>();
                 foreach (Autodesk.Revit.DB.Group g in groups)
@@ -146,6 +147,7 @@ namespace BlakesTesting.Commands
             using (Transaction t = new Transaction(doc, Title))
             {
                 t.Start();
+                    QuietGroupWarning.On(t);
                 try
                 {
                     FlowArrowDrawing.Recolor(doc, groups, loose, color, settings.LineStyle, out ungrouped);
@@ -192,6 +194,7 @@ namespace BlakesTesting.Commands
             using (Transaction t = new Transaction(doc, Title))
             {
                 t.Start();
+                    QuietGroupWarning.On(t);
                 try
                 {
                     flipped = FlowArrowEditing.Flip(doc, groups, out skipped, out ungrouped);
@@ -246,6 +249,7 @@ namespace BlakesTesting.Commands
             using (Transaction t = new Transaction(doc, Title))
             {
                 t.Start();
+                    QuietGroupWarning.On(t);
                 try
                 {
                     changed = FlowArrowEditing.SetText(doc, view, groups, text, settings, out skipped, out ungrouped);
