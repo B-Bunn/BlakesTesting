@@ -37,12 +37,14 @@ internal static class Program
         Settings();
         Direction();
         Side();
+        FirstClickSide();
         Auto();
         Upright();
         PaperSize();
         Styles();
         EndOn();
         Font();
+        Snap();
         Console.WriteLine(_failures == 0 ? "OK - " + _checks + " checks" : _failures + " of " + _checks + " checks FAILED");
         return _failures == 0 ? 0 : 1;
     }
@@ -103,6 +105,38 @@ internal static class Program
         Near(above.Anchor.X, 10, "the arrow is at the first click's place along the pipe");
         Near(above.Anchor.Y, 0, "and the anchor is on the pipe's line, not at the click");
         Near(above.LabelCenter.X, 10, "the text is centred on the arrow");
+    }
+
+    private static FlowArrowShape At(V2 click1, V2? click2) =>
+        FlowArrowLayout.Compute(new FlowArrowInput(new V2(0, 0), new V2(30, 0), 4.0 / 12 / 2, click1, click2, 96, 1, Plain()), out _)!;
+
+    private static void FirstClickSide()
+    {
+        // Click on the lower half of the pipe, then along it: the arrow goes below.
+        FlowArrowShape low = At(new V2(10, -0.1), new V2(16, 0));
+        Check(low.Side == -1 && low.LabelCenter.Y < 0, "a first click on the lower half puts the arrow and text below");
+        FlowArrowShape high = At(new V2(10, 0.1), new V2(16, 0));
+        Check(high.Side == 1 && high.LabelCenter.Y > 0, "a first click on the upper half puts them above");
+        // Dead on the centre line says nothing: the upper side.
+        Check(At(new V2(10, 0), new V2(16, 0)).Side == 1, "a first click dead on the centre line leaves the upper side");
+        Check(At(new V2(10, -0.001), new V2(16, 0)).Side == 1, "a first click a hair off the centre line says nothing either");
+        // A deliberate second click across the pipe wins over where the first landed.
+        Check(At(new V2(10, -0.1), new V2(16, 2)).Side == 1, "a second click across the pipe overrides the first click's side");
+        Check(At(new V2(10, 0.1), new V2(16, -2)).Side == -1, "in either direction");
+        // The same with no second click at all (auto direction).
+        Check(At(new V2(10, -0.1), null).Side == -1, "with no second click the first click's side still counts");
+
+        // A vertical pipe: its text-up side is the left, so a click on its RIGHT half puts the arrow on the right.
+        FlowArrowShape? right = FlowArrowLayout.Compute(
+            new FlowArrowInput(new V2(0, 0), new V2(0, 20), 0.17, new V2(0.1, 10), new V2(0, 14), 96, 1, Plain()), out _);
+        Check(right != null && right.LabelCenter.X > 0, "a click on the right half of a vertical pipe puts the arrow on its right");
+        FlowArrowShape? left = FlowArrowLayout.Compute(
+            new FlowArrowInput(new V2(0, 0), new V2(0, 20), 0.17, new V2(-0.1, 10), new V2(0, 14), 96, 1, Plain()), out _);
+        Check(left != null && left.LabelCenter.X < 0, "and on the left half, its left");
+        // The pipe drawn the other way round makes no difference to which side is clicked.
+        FlowArrowShape? flipped = FlowArrowLayout.Compute(
+            new FlowArrowInput(new V2(0, 20), new V2(0, 0), 0.17, new V2(0.1, 10), new V2(0, 14), 96, 1, Plain()), out _);
+        Check(flipped != null && flipped.LabelCenter.X > 0, "whichever end the pipe was drawn from");
     }
 
     private static void Auto()
@@ -175,6 +209,35 @@ internal static class Program
     {
         FlowArrowShape? s = FlowArrowLayout.Compute(new FlowArrowInput(new V2(5, 5), new V2(5.02, 5), 0.17, new V2(5, 5), null, 96, 1, Plain()), out string? problem);
         Check(s == null && problem != null, "a pipe that points at the viewer is refused, with a reason");
+    }
+
+    private static void Snap()
+    {
+        // A vertical pipe's arrow in a camera whose up is a hair off vertical: put exactly on Z, length kept.
+        var a = (X: 10.0, Y: 20.0, Z: 5.0);
+        var b = (X: 10.0 + 1e-6, Y: 20.0 - 2e-6, Z: 9.0);
+        var s = AxisSnap.SnapEnd(a, b);
+        Check(s.X == 10 && s.Y == 20, "a nearly vertical line becomes exactly vertical");
+        double before = Math.Sqrt(1e-12 + 4e-12 + 16), after = s.Z - a.Z;
+        Near(after, before, "and keeps its length", 1e-9);
+        var down = AxisSnap.SnapEnd(a, (10.0 + 1e-5, 20.0, 1.0));
+        Check(down.X == 10 && down.Z < a.Z, "a nearly vertical line pointing down stays pointing down");
+
+        var h = AxisSnap.SnapEnd((0, 0, 0), (7.0, 1e-4, -1e-4));
+        Check(h.Y == 0 && h.Z == 0 && Math.Abs(h.X - 7.0) < 1e-6, "a nearly horizontal line becomes exactly along X");
+        var hy = AxisSnap.SnapEnd((0, 0, 0), (1e-4, -7.0, 0));
+        Check(hy.X == 0 && hy.Y < 0, "and along Y, in the direction it pointed");
+
+        // A real slope is left alone: 5 degrees is a drawn angle, not an error.
+        var sloped = (X: 10.0, Y: 0.0, Z: 10.0 * Math.Tan(5 * Math.PI / 180));
+        var kept = AxisSnap.SnapEnd((0, 0, 0), sloped);
+        Check(kept == sloped, "a line 5 degrees off an axis is not touched");
+        var diag = AxisSnap.SnapEnd((0, 0, 0), (3.0, 4.0, 0.0));
+        Check(diag == (3.0, 4.0, 0.0), "a diagonal is not touched");
+
+        // Already exact, or nothing: unchanged.
+        Check(AxisSnap.SnapEnd((1, 1, 1), (1, 1, 8)) == (1, 1, 8), "an exact vertical line is unchanged");
+        Check(AxisSnap.SnapEnd((1, 1, 1), (1, 1, 1)) == (1, 1, 1), "a zero-length line is unchanged");
     }
 
     private static void Font()

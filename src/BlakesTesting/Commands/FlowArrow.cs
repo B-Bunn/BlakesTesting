@@ -17,8 +17,8 @@ namespace BlakesTesting.Commands
     ///     note, sized on paper from the view's scale) and in a 3D view (model lines, the text drawn from lines, because
     ///     Revit's API cannot make text in a 3D view).
     ///     <para>
-    ///         Two clicks per arrow: a point on the pipe, then a point toward the way it flows. A second click across the pipe
-    ///         puts the text on that side. A second click on the same spot (or just across the pipe) lets the pipe's slope
+    ///         Two clicks per arrow: a point on the pipe (the arrow goes on the side of the pipe you click), then a point
+    ///         toward the way it flows. A second click across the pipe puts it on that side instead. A second click on the same spot (or just across the pipe) lets the pipe's slope
     ///         decide, pointing toward its lower end. The command repeats until Esc. Each arrow is grouped (a detail group in
     ///         a 2D view, a model group in 3D) so one click moves or deletes it, and one Undo takes it back.
     ///     </para>
@@ -69,7 +69,7 @@ namespace BlakesTesting.Commands
                 try
                 {
                     pipeRef = uidoc.Selection.PickObject(ObjectType.PointOnElement, new PipeFilter(),
-                        Title + (settings.Text.Length > 0 ? " \"" + settings.Text + "\"" : "") + ": click a point on a pipe (Esc to finish)");
+                        Title + (settings.Text.Length > 0 ? " \"" + settings.Text + "\"" : "") + ": click a point on the side of a pipe you want the arrow on (Esc to finish)");
                 }
                 catch (Autodesk.Revit.Exceptions.OperationCanceledException)
                 {

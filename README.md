@@ -157,9 +157,11 @@ the **arrow** (open arrow or three chevrons), its **length** and the **text heig
 the sheet at any view scale, as a spot slope does), and whether it sits **beside the pipe** or **on** it. Saved per user in
 `%AppData%\BlakesTesting\FlowArrow.ini`. Then the command asks for clicks and repeats until Esc:
 
-1. **Click a point on a pipe.** The arrow goes there (put onto the pipe's line).
-2. **Click toward the way it flows.** Measured along the pipe, that sets the direction. Measured **across** the pipe, it sets the **side
-   the text is on** (above or below a horizontal pipe, left or right of a vertical one). Click **the same spot again** (or just across the
+1. **Click a point on a pipe.** The arrow goes there (put onto the pipe's line), **on the side of the pipe you clicked**: click the lower
+   half of a horizontal pipe and the arrow and text go below it, the right half of a vertical one and they go on its right. A pipe drawn as
+   one line (coarse detail) or a click dead on the centre line says nothing, and the arrow goes above or to the left.
+2. **Click toward the way it flows.** Measured along the pipe, that sets the direction. Measured **across** the pipe, it **overrides the
+   side** the first click chose (above or below a horizontal pipe, left or right of a vertical one). Click **the same spot again** (or just across the
    pipe) and the **pipe's slope decides**: the arrow points toward its lower end. A level pipe has no downhill, so it points the way the
    pipe was drawn, and the summary says how many did.
 

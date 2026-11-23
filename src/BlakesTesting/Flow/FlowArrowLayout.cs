@@ -109,9 +109,10 @@ namespace BlakesTesting.Flow
     ///     <list type="bullet">
     ///         <item>the arrow sits at the first click, projected onto the pipe;</item>
     ///         <item>the second click, measured along the pipe, says which way it points;</item>
-    ///         <item>the second click, measured across the pipe, says which side the text is on;</item>
+    ///         <item>the side the arrow and text go on is the side of the pipe's centre line the first click landed on, or,
+    ///               if the second click is across the pipe, the side that one is on;</item>
     ///         <item>a second click within a tenth of a paper inch of the line (the same spot) leaves the direction to
-    ///               <see cref="FlowArrowInput.AutoDirection"/>, and no click across leaves the text on the upper side.</item>
+    ///               <see cref="FlowArrowInput.AutoDirection"/>, and with no side given the text goes on the upper side.</item>
     ///     </list>
     ///     Sizes are paper inches times the view scale, so the arrow keeps its size on the sheet. The text is always upright.
     /// </summary>
@@ -166,7 +167,17 @@ namespace BlakesTesting.Flow
 
             bool directionGiven = Math.Abs(along) > clickTolerance;
             int direction = directionGiven ? (along > 0 ? 1 : -1) : input.AutoDirection;
-            int side = Math.Abs(across) > clickTolerance ? (across > 0 ? 1 : -1) : 1;
+
+            // The side: a second click across the pipe says it; failing that, the side of the pipe's centre line the FIRST
+            // click landed on (a point on the pipe's surface, so a click on the lower half puts the arrow below); failing
+            // that, the upper side. A click on the centre line itself (a pipe drawn as one line, or a click dead on it)
+            // says nothing.
+            double firstAcross = (input.Click1 - anchor).Dot(textUp);
+            double firstTolerance = Math.Max(0.15 * input.PipeHalfWidth, 0.002);
+            int side;
+            if (Math.Abs(across) > clickTolerance) side = across > 0 ? 1 : -1;
+            else if (Math.Abs(firstAcross) > firstTolerance) side = firstAcross > 0 ? 1 : -1;
+            else side = 1;
 
             double headHalf = ArrowHeadHalfWidth * arrowLength;
             double arrowOffset = st.Position == FlowArrowPosition.Beside ? input.PipeHalfWidth + headHalf + gap : 0;

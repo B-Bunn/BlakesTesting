@@ -12,5 +12,6 @@
     <Compile Include="..\..\src\BlakesTesting\Flow\FlowArrowSettings.cs" Link="FlowArrowSettings.cs" />
     <Compile Include="..\..\src\BlakesTesting\Flow\FlowArrowLayout.cs" Link="FlowArrowLayout.cs" />
     <Compile Include="..\..\src\BlakesTesting\Flow\StrokeFont.cs" Link="StrokeFont.cs" />
+    <Compile Include="..\..\src\BlakesTesting\Flow\AxisSnap.cs" Link="AxisSnap.cs" />
   </ItemGroup>
 </Project>

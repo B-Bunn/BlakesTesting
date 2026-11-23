@@ -68,7 +68,7 @@ namespace BlakesTesting.Commands
 
             Label hint = new Label
             {
-                Text = "Click a point on a pipe, then click toward the way it flows. Click across the pipe to put the text on that side. "
+                Text = "Click a point on a pipe (the arrow goes on the side you click), then click toward the way it flows. Click across the pipe to choose the side there instead. "
                        + "Click the same spot to follow the pipe's slope. Esc finishes. Hold Shift when you start the command to skip this window.",
                 ForeColor = SystemColors.GrayText,
             };

@@ -199,7 +199,11 @@ namespace BlakesTesting.Flow
                     continue;
                 }
 
-                ModelCurve curve = doc.Create.NewModelCurve(Line.CreateBound(frame.To3D(s.A), frame.To3D(s.B)), plane);
+                // A line a hair off an axis (a vertical pipe's arrow in a camera that is not exactly upright) makes Revit warn
+                // "Line is slightly off axis": put it exactly on the axis.
+                XYZ from = frame.To3D(s.A), to = frame.To3D(s.B);
+                (double X, double Y, double Z) snapped = AxisSnap.SnapEnd((from.X, from.Y, from.Z), (to.X, to.Y, to.Z));
+                ModelCurve curve = doc.Create.NewModelCurve(Line.CreateBound(from, new XYZ(snapped.X, snapped.Y, snapped.Z)), plane);
                 if (lineStyle != null) curve.LineStyle = lineStyle;
                 drawn.Ids.Add(curve.Id);
             }
