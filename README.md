@@ -42,6 +42,8 @@ The year table is `RevitYears.props`, copied from BIM Tools' Hot Load samples. W
 | `SelectRiserPex` | The preview: finds the riser pipes and **selects** them, writing nothing - Temporary Isolate the selection to check it is the tower. Also writes a per-manifold log to `%TEMP%\BlakesTesting-RiserPex.txt`. |
 | `RoundSelectedPexAsRiser` | Manual override for a tower the trail missed: rounds the **selected** pipes up the pex ladder into MFG.CutLength, riser or not. |
 | `SetSelectedExactCutLength` | The other override: puts the **selected** pipes' real length into MFG.CutLength. |
+| `PotFlangeRiser` | **Fakes the toilet's vertical pipe so every toilet on a level is the same length.** Finds each toilet's vertical pipe - the pipe standing on a **quarter bend / fourth bend / medium turn** (straight or through a no-hub coupling), the way Place Sleeves finds a toilet - takes the **longest one on each level**, writes that length into **MFG.CutLength** (the parameter Round Riser PEX writes) on **every toilet pipe of that level**, and writes the level's name into a new **Pot Flange Riser** parameter. Paints the toilet pipes **blue** in the active view. Whole model; shows a per-level table and asks first; one Undo. Details below. |
+| `ClearPotFlangeRiserColors` | Takes the blue off the toilet pipes in the active view (the selected pipes, or all of them). |
 | `RiserPexColorSettings` | Opens the settings for the riser coloring (below): on/off, which pipes get painted, and the two colors. Saved per user in `%AppData%\BlakesTesting\RiserPexColors.ini`. |
 | `ClearRiserPexColors` | Takes the riser colors back off the pipes in the active view (the selected pipes, or all of them). Only a pipe colored one of the two settings colors is touched. |
 | `TrenchMap` | A **color-coded trench plan with a legend** in the active plan view: each trench is a filled rectangle along the pipe, as wide as BIM Tools' Calculate Spoils digs it at that depth, **colored by width and depth together**, with the legend off to the right of the trench (color, width, depth range, footage). Uses the selected pipes, or every pipe in the view. Details below. |
@@ -118,6 +120,41 @@ The trail rule and the ladder have no Revit types in them and are tested without
     dotnet run --project tests/RiserTrailTest
 
 **Not verified in Revit.** Try it on a copy of a job with two different riser setups: `SelectRiserPex` first and Temporary Isolate the selection; then `RoundRiserPexLengths`, and check MFG.CutLength in a schedule against the pipes' own length. Things to look for: a riser pipe left out, a horizontal or a fixture stub-out picked up, a manifold that found no riser or had its inlet guessed (the dialog and the log name them), and a tower through a non-PEX section.
+
+### Pot Flange Riser
+
+The second rounding scenario for MFG.CutLength, next to the PEX ladder: where Round Riser PEX rounds each pipe up a ladder, this brings **every toilet's
+vertical pipe on a level up to the longest one on that level**, so all the L1 toilets are cut the same. It is its own command and shares only the parameter
+(`MFG.CutLength`, written through the same `RiserCutLengths.Write`, so a Length binding and an older Text binding both work, and a value already right is left alone).
+The pipes' own lengths are never changed.
+
+**What is a toilet's pipe** (`Risers/ToiletPipeFinder.cs`, rules in `Risers/PotFlangeRiserRules.cs`) is what BIM Tools' Place Sleeves reads as a toilet drain
+(`PipeUtils.IsPipeToiletDrain`), with "Medium Turn" added to its bend words:
+
+1. A bend whose family or type name holds **Quarter**, **Fourth Bend** or **Medium Turn**.
+2. A **vertical pipe** (steeper than 45 degrees) on one of its ports that **rises from the bend** - a pipe that drops away from it is a stack coming down, not a pot flange stub. A **no-hub coupling** between the bend and the pipe is looked through.
+3. The pipe is **sanitary**, **3"**, and its type is **ABS, PVC or cast iron**.
+
+**Level** is the pipe's `TPI Level` when the job has it filled in, else its reference level; a pipe with neither is grouped under `(no level)`.
+Per level: the longest usable length wins (a pipe whose length will not read is still brought to it; a level where none read is skipped and reported), and every
+toilet pipe on that level gets it in MFG.CutLength and the level's name in **Pot Flange Riser**.
+
+**Pot Flange Riser** is an instance Text parameter on Pipes. If the job does not have it the command creates it as a shared parameter (fixed GUID
+`6a1c2f5e-3b7d-4e0a-9f48-5d2c8b1e7a90`, from a throwaway shared parameter file in the temp folder - your shared parameter file setting is put back and the team's file is
+not touched). One already bound by that name is used as it is, with Pipes added to its categories if it lacked it.
+
+**Blue** (testing aid): the toilet pipes are painted blue (`#0066FF`, surface and lines) in the active view by a per-element override, so a wrong pick is obvious - nothing in the model changes.
+Only a pipe whose MFG.CutLength is now right is painted by the write; the dialog's "Just paint them blue and select them" paints and selects every toilet pipe it found and writes
+nothing (the default choice). `ClearPotFlangeRiserColors` takes it off later.
+
+The rules have no Revit types in them and are tested without Revit:
+
+    dotnet run --project tests/PotFlangeRiserTest
+
+**Not verified in Revit.** Try it on a copy of a job with a few floors of toilets: run it, choose "Just paint them blue and select them" first and Temporary Isolate
+the selection to check these are the toilets (and nothing like a stack base is in there); then run it again and Write. Check MFG.CutLength and Pot Flange Riser in a pipe schedule
+filtered on Pot Flange Riser - every L1 toilet pipe the same length, L2 its own. Things to look for: a toilet pipe left out (a bend named something else, a 4" closet riser,
+a pipe type without ABS/PVC/Cast in its name), a stack's base bend picked up, a level that reads from `TPI Level` when you expected the reference level.
 
 ### Trench Map
 

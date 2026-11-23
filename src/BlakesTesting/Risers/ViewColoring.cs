@@ -102,6 +102,60 @@ namespace BlakesTesting.Risers
             return cleared;
         }
 
+        /// <summary>
+        ///     Paints these elements ONE colour in the view (a solid surface fill and, with <paramref name="lines"/>, the
+        ///     lines), for a command whose colour is not one of the two riser colours. Returns how many were painted;
+        ///     <paramref name="failed"/> counts the ones Revit would not override here.
+        /// </summary>
+        public static int Paint(Document doc, View view, IEnumerable<ElementId> ids, RgbColor color, bool lines, out int failed)
+        {
+            failed = 0;
+            if (Problem(view) != null) return 0;
+
+            OverrideGraphicSettings ogs = Make(color, SolidFill(doc), lines);
+            int painted = 0;
+            foreach (ElementId id in ids)
+            {
+                try
+                {
+                    view.SetElementOverrides(id, ogs);
+                    painted++;
+                }
+                catch (Autodesk.Revit.Exceptions.ArgumentException)
+                {
+                    failed++;
+                }
+            }
+
+            return painted;
+        }
+
+        /// <summary>Takes <see cref="Paint"/>'s colour back off: every element whose override is that colour goes back to none.</summary>
+        public static int ClearColor(View view, IEnumerable<Element> elements, RgbColor color)
+        {
+            if (Problem(view) != null) return 0;
+            int cleared = 0;
+            foreach (Element e in elements)
+            {
+                try
+                {
+                    OverrideGraphicSettings now = view.GetElementOverrides(e.Id);
+                    Color? surface = now.SurfaceForegroundPatternColor;
+                    Color? line = now.ProjectionLineColor;
+                    bool ours = (surface != null && surface.IsValid && new RgbColor(surface.Red, surface.Green, surface.Blue).Equals(color))
+                                || (line != null && line.IsValid && new RgbColor(line.Red, line.Green, line.Blue).Equals(color));
+                    if (!ours) continue;
+                    view.SetElementOverrides(e.Id, new OverrideGraphicSettings());
+                    cleared++;
+                }
+                catch (Autodesk.Revit.Exceptions.ArgumentException)
+                {
+                }
+            }
+
+            return cleared;
+        }
+
         private static OverrideGraphicSettings Make(RgbColor c, ElementId? solid, bool lines)
         {
             Color color = new Color(c.R, c.G, c.B);
