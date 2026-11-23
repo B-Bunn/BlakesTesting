@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using BlakesTesting.Risers;
 
 namespace BlakesTesting.Flow
 {
@@ -49,6 +50,9 @@ namespace BlakesTesting.Flow
         /// <summary>Text height on paper, inches.</summary>
         public double TextSizeInches { get; set; } = 3.0 / 32;
 
+        /// <summary>The arrow's and the text's color, or null for the line style's own color (black in most templates).</summary>
+        public RgbColor? Color { get; set; }
+
         /// <summary>The line style (a subcategory of Lines) the arrow is drawn in; one the project lacks is skipped.</summary>
         public string LineStyle { get; set; } = "Medium Lines";
 
@@ -88,6 +92,7 @@ namespace BlakesTesting.Flow
             ArrowLengthInches = ArrowLengthInches,
             TextSizeInches = TextSizeInches,
             LineStyle = LineStyle,
+            Color = Color,
         };
 
         // ------------------------------------------------------------------ the file
@@ -105,6 +110,7 @@ namespace BlakesTesting.Flow
             sb.AppendLine("ArrowLengthInches=" + ArrowLengthInches.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture));
             sb.AppendLine("TextSizeInches=" + TextSizeInches.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture));
             sb.AppendLine("LineStyle=" + LineStyle);
+            sb.AppendLine("Color=" + (Color.HasValue ? Color.Value.ToHex() : "auto"));
             foreach (string r in Recent) sb.AppendLine("Recent=" + r);
             return sb.ToString();
         }
@@ -136,6 +142,7 @@ namespace BlakesTesting.Flow
                         if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double size)) s.TextSizeInches = size;
                         break;
                     case "linestyle": s.LineStyle = value; break;
+                    case "color": s.Color = RgbColor.TryParse(value, out RgbColor c) ? c : (RgbColor?)null; break;
                 }
             }
 

@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
+using BlakesTesting.Risers;
 
 namespace BlakesTesting.Flow
 {
@@ -86,7 +88,9 @@ namespace BlakesTesting.Flow
         public static FlowArrowDrawn Draw(Document doc, FlowArrowFrame frame, FlowArrowShape shape, FlowArrowSettings settings)
         {
             FlowArrowDrawn drawn = new FlowArrowDrawn();
-            GraphicsStyle? lineStyle = FindLineStyle(doc, settings.LineStyle);
+            GraphicsStyle? lineStyle = settings.Color.HasValue
+                ? ColoredLineStyle(doc, settings.LineStyle, settings.Color.Value)
+                : FindLineStyle(doc, settings.LineStyle);
 
             if (frame.IsModel) DrawModel(doc, frame, shape, lineStyle, drawn);
             else DrawAnnotation(doc, frame, shape, settings, lineStyle, drawn);
@@ -146,7 +150,7 @@ namespace BlakesTesting.Flow
 
             if (shape.Label.Length > 0)
             {
-                ElementId type = TextType(doc, settings.TextSizeInches);
+                ElementId type = TextType(doc, settings.TextSizeInches, settings.Color);
                 TextNoteOptions options = new TextNoteOptions(type)
                 {
                     HorizontalAlignment = HorizontalTextAlignment.Center,
@@ -165,11 +169,11 @@ namespace BlakesTesting.Flow
             return curve.Id;
         }
 
-        private static ElementId TextType(Document doc, double inches)
+        private static ElementId TextType(Document doc, double inches, RgbColor? color)
         {
-            string name = TextTypePrefix + " " + inches.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) + "in";
-            TextNoteType? type = new FilteredElementCollector(doc).OfClass(typeof(TextNoteType)).Cast<TextNoteType>()
-                .FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.Ordinal));
+            string name = TextTypePrefix + " " + inches.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)
+                          + "in" + (color.HasValue ? " " + color.Value.ToHex() : "");
+            TextNoteType? type = FindTextType(doc, name);
             if (type != null) return type.Id;
 
             ElementId defaultId = doc.GetDefaultElementTypeId(ElementTypeGroup.TextNoteType);
@@ -180,8 +184,18 @@ namespace BlakesTesting.Flow
             type.get_Parameter(BuiltInParameter.TEXT_SIZE)?.Set(inches / 12.0);
             type.get_Parameter(BuiltInParameter.TEXT_BACKGROUND)?.Set(1); // transparent: a pipe shows through
             type.get_Parameter(BuiltInParameter.TEXT_BOX_VISIBILITY)?.Set(0); // no border
+            if (color.HasValue) type.get_Parameter(BuiltInParameter.TEXT_COLOR)?.Set(ColorInt(color.Value));
             return type.Id;
         }
+
+        private static TextNoteType? FindTextType(Document doc, string name) =>
+            new FilteredElementCollector(doc).OfClass(typeof(TextNoteType)).Cast<TextNoteType>()
+                .FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.Ordinal));
+
+        /// <summary>Revit stores a color as one integer, red lowest.</summary>
+        private static int ColorInt(RgbColor c) => c.R | (c.G << 8) | (c.B << 16);
+
+        private static readonly Regex ColorSuffix = new Regex(" #[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
         // ------------------------------------------------------------------ 3D: model lines, the text as strokes
 
@@ -258,6 +272,144 @@ namespace BlakesTesting.Flow
             }
 
             return null;
+        }
+
+        /// <summary>
+        ///     A line style named "Flow Arrow #RRGGBB" in that color, made the first time it is asked for, with the base
+        ///     style's line weight and pattern. A line style, not a view override, so it holds in every view (a 3D arrow is
+        ///     a model element) and for the text-free parts alike.
+        /// </summary>
+        private static GraphicsStyle? ColoredLineStyle(Document doc, string baseName, RgbColor color)
+        {
+            try
+            {
+                Categories cats = doc.Settings.Categories;
+                Category? lines = cats.get_Item(BuiltInCategory.OST_Lines);
+                if (lines == null) return FindLineStyle(doc, baseName);
+
+                string name = GroupPrefix + " " + color.ToHex();
+                Category? sub = null;
+                Category? basis = null;
+                foreach (Category c in lines.SubCategories)
+                {
+                    if (string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)) sub = c;
+                    if (string.Equals(c.Name, baseName, StringComparison.OrdinalIgnoreCase)) basis = c;
+                }
+
+                if (sub == null)
+                {
+                    sub = cats.NewSubcategory(lines, name);
+                    sub.LineColor = new Color(color.R, color.G, color.B);
+                    sub.SetLineWeight(basis?.GetLineWeight(GraphicsStyleType.Projection) ?? 3, GraphicsStyleType.Projection);
+                    ElementId? pattern = basis?.GetLinePatternId(GraphicsStyleType.Projection);
+                    if (pattern != null && pattern != ElementId.InvalidElementId) sub.SetLinePatternId(pattern, GraphicsStyleType.Projection);
+                }
+
+                return sub.GetGraphicsStyle(GraphicsStyleType.Projection);
+            }
+            catch (Autodesk.Revit.Exceptions.ApplicationException)
+            {
+                return FindLineStyle(doc, baseName);
+            }
+        }
+
+        /// <summary>
+        ///     Puts <paramref name="color"/> (null = the line style's own) on every line and text in the arrows. A group's
+        ///     members are not editable one by one, so each group is taken apart, recolored and grouped again under the same
+        ///     name. Returns how many arrows were recolored and how many ended up ungrouped because Revit refused to group
+        ///     them again (still found by Clear Flow Arrows through their Comments).
+        /// </summary>
+        public static int Recolor(Document doc, IList<Autodesk.Revit.DB.Group> groups, IList<ElementId> loose, RgbColor? color, string lineStyleName, out int ungrouped)
+        {
+            ungrouped = 0;
+            GraphicsStyle? style = color.HasValue
+                ? ColoredLineStyle(doc, lineStyleName, color.Value)
+                : FindLineStyle(doc, lineStyleName) ?? doc.Settings.Categories.get_Item(BuiltInCategory.OST_Lines)?.GetGraphicsStyle(GraphicsStyleType.Projection);
+
+            int done = 0;
+            foreach (Autodesk.Revit.DB.Group g in groups)
+            {
+                string name = g.GroupType.Name;
+                ElementId oldType = g.GroupType.Id;
+                List<ElementId> members = g.UngroupMembers().ToList();
+                ApplyColor(doc, members, color, style);
+
+                try
+                {
+                    if (doc.GetElement(oldType) is GroupType t && t.Groups.Size == 0) doc.Delete(oldType);
+                }
+                catch (Autodesk.Revit.Exceptions.ApplicationException)
+                {
+                    // An old type left over is only clutter.
+                }
+
+                try
+                {
+                    Autodesk.Revit.DB.Group again = doc.Create.NewGroup(members);
+                    again.GroupType.Name = IsGroupNameFree(doc, name) ? name : UniqueGroupName(doc);
+                }
+                catch (Autodesk.Revit.Exceptions.ApplicationException)
+                {
+                    ungrouped++;
+                }
+
+                done++;
+            }
+
+            if (loose.Count > 0)
+            {
+                ApplyColor(doc, loose, color, style);
+                done += 1;
+            }
+
+            return done;
+        }
+
+        private static bool IsGroupNameFree(Document doc, string name) =>
+            !new FilteredElementCollector(doc).OfClass(typeof(GroupType)).Any(t => string.Equals(t.Name, name, StringComparison.Ordinal));
+
+        private static void ApplyColor(Document doc, IEnumerable<ElementId> ids, RgbColor? color, GraphicsStyle? style)
+        {
+            foreach (ElementId id in ids)
+            {
+                Element? e = doc.GetElement(id);
+                if (e is CurveElement curve)
+                {
+                    if (style != null) curve.LineStyle = style;
+                }
+                else if (e is TextNote note)
+                {
+                    note.ChangeTypeId(TextTypeFor(doc, note.TextNoteType, color));
+                }
+            }
+        }
+
+        /// <summary>The note's own type, in the color: the same size, found or made under the same name plus the color.</summary>
+        private static ElementId TextTypeFor(Document doc, TextNoteType current, RgbColor? color)
+        {
+            string baseName = ColorSuffix.Replace(current.Name, "");
+            string name = color.HasValue ? baseName + " " + color.Value.ToHex() : baseName;
+            TextNoteType? found = FindTextType(doc, name);
+            if (found != null) return found.Id;
+
+            TextNoteType made = (TextNoteType)current.Duplicate(name);
+            made.get_Parameter(BuiltInParameter.TEXT_COLOR)?.Set(color.HasValue ? ColorInt(color.Value) : 0);
+            return made.Id;
+        }
+
+        /// <summary>
+        ///     Keeps only what the person has selected, when they have selected some arrows. True when it did.
+        /// </summary>
+        public static bool Restrict(ICollection<ElementId> selected, ref List<Autodesk.Revit.DB.Group> groups, ref List<ElementId> loose)
+        {
+            if (selected.Count == 0) return false;
+            HashSet<ElementId> set = new HashSet<ElementId>(selected);
+            List<Autodesk.Revit.DB.Group> g = groups.FindAll(x => set.Contains(x.Id));
+            List<ElementId> l = loose.FindAll(set.Contains);
+            if (g.Count + l.Count == 0) return false;
+            groups = g;
+            loose = l;
+            return true;
         }
 
         /// <summary>The groups of arrows that show in the view, and the loose pieces of any that could not be grouped.</summary>

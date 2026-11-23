@@ -2,6 +2,7 @@
 using System;
 using System.Linq;
 using BlakesTesting.Flow;
+using BlakesTesting.Risers;
 
 // Revit-free checks of Flow Arrow: the settings file, the arrow's geometry (direction and side from the two clicks, upright
 // text, paper-size scaling) and the stroke font the 3D label is drawn with. Exit code 1 on any failure.
@@ -69,6 +70,15 @@ internal static class Program
         Near(odd.ArrowLengthInches, 0.5, "an unreadable length keeps the default");
         Near(odd.TextSizeInches, 0.75, "a huge text size is capped");
         Check(FlowArrowSettings.Parse(null).Text == "FLOW", "no file is the defaults");
+
+        // Color: none by default, and a color (or "auto") survives the file.
+        Check(new FlowArrowSettings().Color == null, "the default color is the line style's own");
+        FlowArrowSettings red = new FlowArrowSettings { Color = new RgbColor(220, 0, 0) };
+        FlowArrowSettings redBack = FlowArrowSettings.Parse(red.ToText());
+        Check(redBack.Color.HasValue && redBack.Color.Value.Equals(new RgbColor(220, 0, 0)), "a color survives the file");
+        Check(FlowArrowSettings.Parse(new FlowArrowSettings().ToText()).Color == null, "'auto' reads back as no color");
+        Check(FlowArrowSettings.Parse("Color=nonsense\n").Color == null, "an unreadable color is no color");
+        Check(red.Clone().Color.HasValue && red.Clone().Color!.Value.Equals(red.Color!.Value), "a clone keeps the color");
         Check(FlowArrowSettings.CleanText("  A\r\nB ") == "A  B", "line breaks become spaces");
         Check(FlowArrowSettings.Parse("Text=\n").Text == "", "an empty text stays empty: an arrow with no text");
         FlowArrowSettings full = new FlowArrowSettings();

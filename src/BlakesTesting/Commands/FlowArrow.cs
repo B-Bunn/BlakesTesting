@@ -8,6 +8,7 @@ using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using BlakesTesting.Flow;
+using BlakesTesting.Risers;
 
 namespace BlakesTesting.Commands
 {
@@ -202,20 +203,7 @@ namespace BlakesTesting.Commands
             (List<Autodesk.Revit.DB.Group> groups, List<ElementId> loose) = FlowArrowDrawing.Find(doc, view);
 
             // With some arrows selected, only those go.
-            ICollection<ElementId> picked = uidoc.Selection.GetElementIds();
-            bool onlySelected = false;
-            if (picked.Count > 0)
-            {
-                HashSet<ElementId> pickedSet = new HashSet<ElementId>(picked);
-                List<Autodesk.Revit.DB.Group> chosen = groups.FindAll(g => pickedSet.Contains(g.Id));
-                List<ElementId> chosenLoose = loose.FindAll(pickedSet.Contains);
-                if (chosen.Count + chosenLoose.Count > 0)
-                {
-                    groups = chosen;
-                    loose = chosenLoose;
-                    onlySelected = true;
-                }
-            }
+            bool onlySelected = FlowArrowDrawing.Restrict(uidoc.Selection.GetElementIds(), ref groups, ref loose);
 
             if (groups.Count + loose.Count == 0)
             {
@@ -272,6 +260,92 @@ namespace BlakesTesting.Commands
                 t.Commit();
             }
 
+            return Result.Succeeded;
+        }
+    }
+
+    /// <summary>
+    ///     Recolor Flow Arrows: changes the color of arrows already placed (and their text) in the active view, or only the
+    ///     selected ones. Works on arrows made before the color setting existed too.
+    /// </summary>
+    [Transaction(TransactionMode.Manual)]
+    public class RecolorFlowArrows : IExternalCommand
+    {
+        private const string Title = "Recolor Flow Arrows";
+
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            UIDocument? uidoc = commandData.Application.ActiveUIDocument;
+            if (uidoc == null)
+            {
+                message = "Open a model first.";
+                return Result.Cancelled;
+            }
+
+            Document doc = uidoc.Document;
+            View view = doc.ActiveView;
+            (List<Autodesk.Revit.DB.Group> groups, List<ElementId> loose) = FlowArrowDrawing.Find(doc, view);
+            bool onlySelected = FlowArrowDrawing.Restrict(uidoc.Selection.GetElementIds(), ref groups, ref loose);
+            int count = groups.Count + loose.Count;
+            if (count == 0)
+            {
+                TaskDialog.Show(Title, "There are no flow arrows in " + view.Name + ".");
+                return Result.Cancelled;
+            }
+
+            FlowArrowSettings settings = FlowArrowSettings.Load();
+            TaskDialog ask = new TaskDialog(Title)
+            {
+                MainInstruction = "Recolor " + count + " flow arrow(s) " + (onlySelected ? "from the selection" : "in " + view.Name) + "?",
+                MainContent = view is View3D ? "In a 3D view they are model elements, so the new color shows in every view." : "",
+                CommonButtons = TaskDialogCommonButtons.Cancel,
+            };
+            ask.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Pick a color...",
+                settings.Color.HasValue ? "Starts from " + settings.Color.Value.ToHex() + ", the color new arrows are placed in." : "");
+            ask.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Back to the line style's own color",
+                "Black in most templates (the \"" + settings.LineStyle + "\" line style).");
+            TaskDialogResult choice = ask.Show();
+
+            RgbColor? color;
+            if (choice == TaskDialogResult.CommandLink1)
+            {
+                using (System.Windows.Forms.ColorDialog dlg = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true })
+                {
+                    RgbColor start = settings.Color ?? new RgbColor(255, 0, 0);
+                    dlg.Color = System.Drawing.Color.FromArgb(start.R, start.G, start.B);
+                    if (dlg.ShowDialog(new RevitWindow()) != System.Windows.Forms.DialogResult.OK) return Result.Cancelled;
+                    color = new RgbColor(dlg.Color.R, dlg.Color.G, dlg.Color.B);
+                }
+            }
+            else if (choice == TaskDialogResult.CommandLink2)
+            {
+                color = null;
+            }
+            else
+            {
+                return Result.Cancelled;
+            }
+
+            int ungrouped;
+            using (Transaction t = new Transaction(doc, Title))
+            {
+                t.Start();
+                try
+                {
+                    FlowArrowDrawing.Recolor(doc, groups, loose, color, settings.LineStyle, out ungrouped);
+                }
+                catch (Autodesk.Revit.Exceptions.ApplicationException ex)
+                {
+                    t.RollBack();
+                    message = "Revit would not recolor them: " + ex.Message;
+                    return Result.Failed;
+                }
+
+                t.Commit();
+            }
+
+            if (ungrouped > 0)
+                TaskDialog.Show(Title, ungrouped + " arrow(s) were recolored but Revit would not group them again, so they are loose lines and text now. Clear Flow Arrows still finds them.");
             return Result.Succeeded;
         }
     }
